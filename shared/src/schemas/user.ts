@@ -12,6 +12,10 @@ export const userSchema = z.object({
   email: z.string().email(),
   displayName: z.string().optional(),
   preferences: userPreferencesSchema.optional(),
+  // Multi-tenant fields
+  organizationId: z.string().nullable().optional(), // null for individual users
+  currentRole: z.enum(['admin', 'team_manager', 'member', 'individual']).optional(),
+  tier: z.enum(['free_individual', 'paid_individual', 'team', 'enterprise']).optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -20,11 +24,17 @@ export const createUserSchema = z.object({
   email: z.string().email(),
   displayName: z.string().optional(),
   preferences: userPreferencesSchema.optional(),
+  organizationId: z.string().nullable().optional(),
+  currentRole: z.enum(['admin', 'team_manager', 'member', 'individual']).optional(),
+  tier: z.enum(['free_individual', 'paid_individual', 'team', 'enterprise']).optional(),
 });
 
 export const updateUserSchema = z.object({
   displayName: z.string().optional(),
   preferences: userPreferencesSchema.optional(),
+  organizationId: z.string().nullable().optional(),
+  currentRole: z.enum(['admin', 'team_manager', 'member', 'individual']).optional(),
+  tier: z.enum(['free_individual', 'paid_individual', 'team', 'enterprise']).optional(),
 });
 
 export const paginationSchema = z.object({
@@ -127,6 +137,9 @@ export const firestoreUserSchema = userSchema.extend({
   preferences: userPreferencesSchema.extend({
     lastUpdated: z.union([z.date(), z.any()]).optional(), // Allow Firestore Timestamp
   }).optional(),
+  organizationId: z.string().nullable().optional(),
+  currentRole: z.enum(['admin', 'team_manager', 'member', 'individual']).optional(),
+  tier: z.enum(['free_individual', 'paid_individual', 'team', 'enterprise']).optional(),
 });
 
 export const createFirestoreUserSchema = createUserSchema.extend({
@@ -135,6 +148,9 @@ export const createFirestoreUserSchema = createUserSchema.extend({
   preferences: userPreferencesSchema.extend({
     lastUpdated: z.union([z.date(), z.any()]).optional(),
   }).optional(),
+  organizationId: z.string().nullable().optional(),
+  currentRole: z.enum(['admin', 'team_manager', 'member', 'individual']).optional(),
+  tier: z.enum(['free_individual', 'paid_individual', 'team', 'enterprise']).optional(),
 });
 
 // Collection names as constants
@@ -142,7 +158,11 @@ export const COLLECTIONS = {
   USERS: 'users',
   POSTS: 'posts',
   CURSOR_USAGE: 'cursor_usage',
-  ENHANCED_CURSOR_USAGE: 'enhanced_cursor_usage', // New collection
+  ENHANCED_CURSOR_USAGE: 'enhanced_cursor_usage',
+  ORGANIZATIONS: 'organizations',
+  INVITATIONS: 'invitations',
+  SUBSCRIPTIONS: 'subscriptions',
+  SYNC_HISTORY: 'syncHistory',
 } as const;
 
 export type User = z.infer<typeof userSchema>;

@@ -2,60 +2,203 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read and write their own user document and subcollections
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getOrgMember(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data;
+    }
+    
+    function isOrgMember(orgId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)) &&
+             getOrgMember(orgId).status == 'active';
+    }
+    
+    function isOrgAdmin(orgId) {
+      return isOrgMember(orgId) && getOrgMember(orgId).role == 'admin';
+    }
+    
+    function isOrgTeamManager(orgId) {
+      return isOrgMember(orgId) && getOrgMember(orgId).role == 'team_manager';
+    }
+    
+    function isOrgAdminOrManager(orgId) {
+      return isOrgAdmin(orgId) || isOrgTeamManager(orgId);
+    }
+    
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email in ['glenn@fueld.ai', 'admin@aicoder.guru'];
+    }
+    
+    // ===== ORGANIZATIONS =====
+    match /organizations/{orgId} {
+      // Read: Any active member of the organization
+      allow read: if isOrgMember(orgId);
       
-      // Users can manage their own raw cursor usage data
+      // Create: Only authenticated users can create organizations
+      allow create: if isAuthenticated() && 
+                       request.resource.data.ownerId == request.auth.uid;
+      
+      // Update: Only admins can update organization settings
+      allow update: if isOrgAdmin(orgId);
+      
+      // Delete: Only owner or super admin
+      allow delete: if (isOrgAdmin(orgId) && 
+                       resource.data.ownerId == request.auth.uid) || 
+                       isSuperAdmin();
+      
+      // ===== ORGANIZATION MEMBERS =====
+      match /members/{userId} {
+        // Read: Any org member can see other members
+        allow read: if isOrgMember(orgId);
+        
+        // Create: Admins and team managers can invite users
+        allow create: if isOrgAdminOrManager(orgId);
+        
+        // Update: Admins can update any member, team managers can update members in their team
+        allow update: if isOrgAdmin(orgId) || 
+                        (isOrgTeamManager(orgId) && 
+                         resource.data.role == 'member' &&
+                         getOrgMember(orgId).teamId == resource.data.teamId);
+        
+        // Delete: Admins can remove members, users can remove themselves
+        allow delete: if isOrgAdmin(orgId) || isUser(userId);
+      }
+      
+      // ===== TEAMS =====
+      match /teams/{teamId} {
+        // Read: Any org member can view teams
+        allow read: if isOrgMember(orgId);
+        
+        // Create/Update/Delete: Only admins
+        allow create, update, delete: if isOrgAdmin(orgId);
+      }
+      
+      // ===== API CONNECTIONS =====
+      match /apiConnections/{connectionId} {
+        // Read: Admins and team managers can view connections
+        allow read: if isOrgAdminOrManager(orgId);
+        
+        // Create/Update/Delete: Only admins
+        allow create, update, delete: if isOrgAdmin(orgId);
+      }
+      
+      // ===== ORGANIZATION USAGE DATA =====
+      match /usage/{usageId} {
+        // Read: Admins see all, team managers see their team, members see their own
+        allow read: if isOrgAdmin(orgId) ||
+                      (isOrgTeamManager(orgId) && 
+                       resource.data.userId in getOrgMember(orgId).teamMemberIds) ||
+                      (isOrgMember(orgId) && resource.data.userId == request.auth.uid);
+        
+        // Create: Members can create their own usage data, admins can create any
+        allow create: if (isOrgMember(orgId) && request.resource.data.userId == request.auth.uid) ||
+                        isOrgAdmin(orgId);
+        
+        // Update/Delete: Only the user who created it or admins
+        allow update, delete: if (isOrgMember(orgId) && resource.data.userId == request.auth.uid) ||
+                                isOrgAdmin(orgId);
+      }
+    }
+    
+    // ===== SUBSCRIPTIONS =====
+    match /subscriptions/{orgId} {
+      // Read: Only org admins
+      allow read: if isOrgAdmin(orgId);
+      
+      // Create/Update: Admins or Stripe webhook (server-side)
+      allow create, update: if isOrgAdmin(orgId);
+      
+      // Delete: Only super admin
+      allow delete: if isSuperAdmin();
+    }
+    
+    // ===== INVITATIONS =====
+    match /invitations/{inviteId} {
+      // Read: The invited user (by email) or org admins
+      allow read: if isAuthenticated() && 
+                    (request.auth.token.email == resource.data.email ||
+                     isOrgAdmin(resource.data.organizationId));
+      
+      // Create: Org admins and team managers
+      allow create: if isAuthenticated() && 
+                      (isOrgAdmin(request.resource.data.organizationId) ||
+                       isOrgTeamManager(request.resource.data.organizationId));
+      
+      // Update: The invited user or org admin
+      allow update: if isAuthenticated() &&
+                      (request.auth.token.email == resource.data.email ||
+                       isOrgAdmin(resource.data.organizationId));
+      
+      // Delete: Org admin who sent it
+      allow delete: if isOrgAdmin(resource.data.organizationId);
+    }
+    
+    // ===== USERS =====
+    match /users/{userId} {
+      // Read: User themselves or members of their organization
+      allow read: if isUser(userId) || 
+                    (isAuthenticated() && getUserData().organizationId != null && 
+                     isOrgMember(getUserData().organizationId));
+      
+      // Create/Update: User themselves
+      allow create, update: if isUser(userId);
+      
+      // Delete: User themselves or super admin
+      allow delete: if isUser(userId) || isSuperAdmin();
+      
+      // ===== USER'S PERSONAL USAGE DATA (Legacy & Backwards Compatibility) =====
       match /rawUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Users can manage their own aggregated cursor usage data
       match /aggregatedUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Users can manage their own enhanced raw cursor usage data
       match /enhancedRawUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Users can manage their own enhanced aggregated cursor usage data
       match /enhancedAggregatedUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Legacy support for existing cursorUsage collection
       match /cursorUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
     }
     
-    // Public read access to users collection (for display names, etc.)
-    match /users/{userId} {
-      allow read: if request.auth != null;
-    }
-    
-    // Currency rates - read access for all authenticated users, write access for admins only
+    // ===== CURRENCY RATES =====
     match /currencyRates/{currencyCode} {
-      allow read: if request.auth != null;
-      allow write, create, delete: if request.auth != null && 
-        request.auth.token.email in ['glenn@fueld.ai']; // Replace with actual admin emails
+      allow read: if isAuthenticated();
+      allow write, create, delete: if isSuperAdmin();
     }
     
-    // Example: Allow authenticated users to create/read posts
-    match /posts/{postId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == resource.data.authorId;
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.authorId;
+    // ===== SYNC HISTORY (for API connectors) =====
+    match /syncHistory/{syncId} {
+      // Read: Org admins can see sync history
+      allow read: if isAuthenticated() && isOrgAdmin(resource.data.organizationId);
+      
+      // Create/Update: Server-side only (Cloud Functions)
+      allow create, update: if false;
+      
+      // Delete: Super admin only
+      allow delete: if isSuperAdmin();
     }
-    
-    // Development rule - remove in production!
-    // Uncomment the line below for development testing
-    // match /{document=**} {
-    //   allow read, write: if request.auth != null;
-    // }
     
     // Deny all other access
     match /{document=**} {
@@ -63,3 +206,4 @@ service cloud.firestore {
     }
   }
 }
+
