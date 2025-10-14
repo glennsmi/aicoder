@@ -99,6 +99,19 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
     }
   }
 
+  const handleResendEmailLink = async () => {
+    try {
+      setError('')
+      setLoading(true)
+      await sendEmailLink(email)
+      // Keep the success state, just show feedback
+    } catch (error: any) {
+      setError(error.message || 'Failed to resend sign-in link')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const switchMode = () => {
     if (mode === 'login') {
       setMode('signup')
@@ -154,7 +167,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
           {emailLinkSent ? (
             <div className="text-center py-8">
               <div className="mb-4">
-                <svg className="w-16 h-16 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-16 h-16 mx-auto text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 19v-8.93a2 2 0 01.89-1.664l7-4.666a2 2 0 012.22 0l7 4.666A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76" />
                 </svg>
               </div>
@@ -162,12 +175,31 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
               <p className="text-sm text-gunmetal-700 mb-6">
                 We've sent a sign-in link to <strong>{email}</strong>. Click the link in the email to complete your sign-in.
               </p>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 bg-primary-500 text-gunmetal-900 font-medium rounded-lg hover:bg-primary-600 transition-colors"
-              >
-                Got it
-              </button>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 bg-primary-500 text-gunmetal-900 font-medium rounded-lg hover:bg-primary-600 transition-colors"
+                >
+                  Got it
+                </button>
+                <button
+                  onClick={handleResendEmailLink}
+                  disabled={loading}
+                  className="px-4 py-2 border border-gray-300 text-gunmetal-700 font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <div className="flex items-center justify-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gunmetal-700" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Resending...
+                    </div>
+                  ) : (
+                    'Resend Email'
+                  )}
+                </button>
+              </div>
             </div>
           ) : (
             <>

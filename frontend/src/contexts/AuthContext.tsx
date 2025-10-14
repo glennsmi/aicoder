@@ -458,6 +458,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Send email link for passwordless sign-in
   async function sendEmailLink(email: string) {
     console.log('📧 Sending sign-in link to:', email)
+    console.log('🌐 Current origin:', window.location.origin)
     
     // Action code settings for email link
     const actionCodeSettings = {
@@ -467,16 +468,33 @@ export function AuthProvider({ children }: AuthProviderProps) {
       handleCodeInApp: true,
     }
 
+    console.log('⚙️ Action code settings:', actionCodeSettings)
+
     try {
+      console.log('📤 Calling Firebase sendSignInLinkToEmail...')
       await sendSignInLinkToEmail(auth, email, actionCodeSettings)
       
       // Save the email locally so we can use it to complete sign-in
       window.localStorage.setItem('emailForSignIn', email)
       
-      console.log('✅ Sign-in link sent successfully')
+      console.log('✅ Sign-in link sent successfully to:', email)
+      console.log('💾 Email saved to localStorage')
     } catch (error: any) {
-      console.error('❌ Failed to send sign-in link:', error)
-      throw error
+      console.error('❌ Failed to send sign-in link')
+      console.error('Error code:', error.code)
+      console.error('Error message:', error.message)
+      console.error('Full error:', error)
+      
+      // Provide user-friendly error messages
+      if (error.code === 'auth/operation-not-allowed') {
+        throw new Error('Email link sign-in is not enabled. Please contact support.')
+      } else if (error.code === 'auth/invalid-email') {
+        throw new Error('Please enter a valid email address.')
+      } else if (error.code === 'auth/missing-email') {
+        throw new Error('Please enter your email address.')
+      } else {
+        throw new Error(error.message || 'Failed to send sign-in link. Please try again.')
+      }
     }
   }
 
