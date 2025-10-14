@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useOrganization } from '../contexts/OrganizationContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useUserUsageData } from '../hooks/useUserUsageData'
 import CSVImport from '@/components/CSVImport'
@@ -16,7 +18,9 @@ import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
 
 
 export default function CursorCostsPage() {
-  const { currentUser } = useAuth()
+  const navigate = useNavigate()
+  const { currentUser, user } = useAuth()
+  const { organization } = useOrganization()
   const { actualTheme } = useTheme()
   const { 
     loading, 
@@ -293,6 +297,20 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
                                 </svg>
                                 Settings
                               </button>
+
+                              {/* Show Create Organization button if user doesn't have one */}
+                              {user && user.tier === 'free_individual' && !organization && (
+                                <button 
+                                  onClick={() => navigate('/create-organization')}
+                                  className="inline-flex items-center px-4 py-2 bg-primary-500 text-gunmetal-900 rounded-lg hover:bg-primary-600 transition-all duration-200 font-semibold shadow-lg"
+                                  title="Create Organization"
+                                >
+                                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                  </svg>
+                                  Create Team
+                                </button>
+                              )}
                             
                             </div>
                           </div>
