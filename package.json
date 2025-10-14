@@ -1,0 +1,30 @@
+{
+  "name": "cursor-costs-template",
+  "version": "1.0.0",
+  "description": "React + Vite + Firebase template with Tailwind v4 and shared models",
+  "workspaces": [
+    "frontend",
+    "functions",
+    "shared"
+  ],
+  "scripts": {
+    "setup": "node setup.js",
+    "dev": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "deploy": " cd frontend && npm run build && cd .. && npm run firebase:deploy",
+    "preview": "npm run preview --workspace=frontend",
+    "functions:dev": "npm run dev --workspace=functions",
+    "functions:build": "npm run build --workspace=functions",
+    "firebase:emulators": "firebase emulators:start",
+    "firebase:deploy": "firebase deploy --only hosting",
+    "install:all": "npm install && npm install --workspace=frontend && npm install --workspace=functions && npm install --workspace=shared"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  },
+  "private": true,
+  "dependencies": {
+    "firebase": "^11.8.1",
+    "firebase-admin": "^13.4.0"
+  }
+}

@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read and write their own user document and subcollections
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Users can manage their own raw cursor usage data
+      match /rawUsage/{usageId} {
+        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Users can manage their own aggregated cursor usage data
+      match /aggregatedUsage/{usageId} {
+        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Users can manage their own enhanced raw cursor usage data
+      match /enhancedRawUsage/{usageId} {
+        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Users can manage their own enhanced aggregated cursor usage data
+      match /enhancedAggregatedUsage/{usageId} {
+        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Legacy support for existing cursorUsage collection
+      match /cursorUsage/{usageId} {
+        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Public read access to users collection (for display names, etc.)
+    match /users/{userId} {
+      allow read: if request.auth != null;
+    }
+    
+    // Currency rates - read access for all authenticated users, write access for admins only
+    match /currencyRates/{currencyCode} {
+      allow read: if request.auth != null;
+      allow write, create, delete: if request.auth != null && 
+        request.auth.token.email in ['glenn@fueld.ai']; // Replace with actual admin emails
+    }
+    
+    // Example: Allow authenticated users to create/read posts
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == resource.data.authorId;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.authorId;
+    }
+    
+    // Development rule - remove in production!
+    // Uncomment the line below for development testing
+    // match /{document=**} {
+    //   allow read, write: if request.auth != null;
+    // }
+    
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
