@@ -8,7 +8,7 @@ import {
   hasPermission,
   canViewUserData,
   canManageUser,
-  canAccessTeam,
+  canAccessTeam as canAccessTeamUtil,
 } from '@cursor-costs/shared';
 import { useAuth } from './AuthContext';
 import { 
@@ -272,7 +272,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 
   const checkCanAccessTeam = (teamId: string): boolean => {
     if (!currentRole) return false;
-    return canAccessTeam(currentRole, teamId, currentMember?.teamId);
+    return canAccessTeamUtil(currentRole, teamId, currentMember?.teamId);
   };
 
   // Refresh functions
