@@ -212,7 +212,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors bg-white text-gunmetal-900 placeholder:text-gray-400"
                   placeholder="Enter your full name"
                   disabled={loading}
                 />
@@ -228,7 +228,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors bg-white text-gunmetal-900 placeholder:text-gray-400"
                 placeholder="Enter your email"
                 disabled={loading}
               />
@@ -244,7 +244,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors bg-white text-gunmetal-900 placeholder:text-gray-400"
                   placeholder="Enter your password"
                   disabled={loading}
                   minLength={6}
