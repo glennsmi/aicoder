@@ -4,6 +4,7 @@ import { OrganizationProvider } from './contexts/OrganizationContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import HomePage from './pages/HomePage'
 import CursorCostsPage from './pages/CursorCostsPage'
+import CompleteEmailSignInPage from './pages/CompleteEmailSignInPage'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<CursorCostsPage />} />
                   <Route path="/home" element={<HomePage />} />
+                  <Route path="/auth/complete" element={<CompleteEmailSignInPage />} />
                 </Routes>
               </main>
             </div>

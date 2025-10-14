@@ -7,7 +7,10 @@ import {
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink
 } from 'firebase/auth'
 import { 
   doc, 
@@ -31,6 +34,9 @@ interface AuthContextType {
   signup: (email: string, password: string, name?: string) => Promise<void>
   login: (email: string, password: string) => Promise<void>
   loginWithGoogle: () => Promise<void>
+  sendEmailLink: (email: string) => Promise<void>
+  completeEmailLinkSignIn: (email: string, emailLink?: string) => Promise<void>
+  isEmailLinkSignIn: () => boolean
   logout: () => Promise<void>
   acceptInvitation: (invitationId: string) => Promise<void>
   hasPendingInvitation: () => Promise<Invitation | null>
@@ -449,6 +455,155 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
+  // Send email link for passwordless sign-in
+  async function sendEmailLink(email: string) {
+    console.log('📧 Sending sign-in link to:', email)
+    
+    // Action code settings for email link
+    const actionCodeSettings = {
+      // URL you want to redirect back to. The domain must be in the authorized domains list.
+      url: `${window.location.origin}/auth/complete`,
+      // This must be true for email link sign-in
+      handleCodeInApp: true,
+    }
+
+    try {
+      await sendSignInLinkToEmail(auth, email, actionCodeSettings)
+      
+      // Save the email locally so we can use it to complete sign-in
+      window.localStorage.setItem('emailForSignIn', email)
+      
+      console.log('✅ Sign-in link sent successfully')
+    } catch (error: any) {
+      console.error('❌ Failed to send sign-in link:', error)
+      throw error
+    }
+  }
+
+  // Check if the current URL is an email link sign-in
+  function isEmailLinkSignIn(): boolean {
+    return isSignInWithEmailLink(auth, window.location.href)
+  }
+
+  // Complete email link sign-in
+  async function completeEmailLinkSignIn(email: string, emailLink?: string) {
+    console.log('🔗 Completing email link sign-in for:', email)
+    
+    const link = emailLink || window.location.href
+    
+    if (!isSignInWithEmailLink(auth, link)) {
+      throw new Error('Invalid email link')
+    }
+
+    try {
+      console.log('1️⃣ Signing in with email link...')
+      const result = await signInWithEmailLink(auth, email, link)
+      console.log('✅ Email link sign-in successful for:', result.user.email)
+      
+      // Clear the email from storage
+      window.localStorage.removeItem('emailForSignIn')
+      
+      // Check if user document already exists
+      console.log('2️⃣ Checking if user document exists...')
+      const userDocRef = doc(db, 'users', result.user.uid)
+      const userDocSnap = await getDoc(userDocRef)
+      
+      // Only create document if it doesn't exist
+      if (!userDocSnap.exists()) {
+        console.log('3️⃣ New user, checking for invitations...')
+        
+        // Check for pending invitations
+        const invitationsRef = collection(db, 'invitations')
+        const inviteQuery = query(
+          invitationsRef,
+          where('email', '==', email),
+          where('status', '==', 'pending')
+        )
+        const inviteSnapshot = await getDocs(inviteQuery)
+
+        let organizationId: string | null = null
+        let userRole: OrganizationRole = 'individual'
+        let userTier: 'free_individual' | 'paid_individual' | 'team' | 'enterprise' = 'free_individual'
+
+        if (!inviteSnapshot.empty) {
+          const invitation = inviteSnapshot.docs[0].data() as Invitation
+          console.log('📨 Found pending invitation to organization:', invitation.organizationId)
+          
+          organizationId = invitation.organizationId
+          userRole = invitation.role
+          userTier = 'team'
+
+          // Create member document
+          await setDoc(doc(db, 'organizations', organizationId, 'members', result.user.uid), {
+            userId: result.user.uid,
+            email: email,
+            displayName: result.user.displayName || '',
+            role: invitation.role,
+            teamId: invitation.teamId || null,
+            invitedAt: invitation.createdAt,
+            joinedAt: serverTimestamp(),
+            status: 'active',
+            invitedBy: invitation.invitedBy,
+          })
+
+          // Mark invitation as accepted
+          await updateDoc(doc(db, 'invitations', inviteSnapshot.docs[0].id), {
+            status: 'accepted',
+            acceptedBy: result.user.uid,
+            acceptedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        } else {
+          // Create personal organization
+          organizationId = await createPersonalOrganization(
+            result.user.uid,
+            email
+          )
+          userRole = 'admin'
+          userTier = 'free_individual'
+        }
+
+        const userDoc = {
+          email: email,
+          displayName: result.user.displayName || '',
+          organizationId,
+          currentRole: userRole,
+          tier: userTier,
+          preferences: {
+            primaryCurrency: 'GBP',
+            lastUpdated: serverTimestamp(),
+          },
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }
+
+        console.log('📄 Email link user document to create:', userDoc)
+
+        try {
+          await setDoc(userDocRef, userDoc)
+          console.log('✅ New email link user document created in Firestore for:', result.user.uid)
+          console.log('📧 This should trigger the welcome email function')
+        } catch (error) {
+          console.error('❌ Failed to create email link user document:', error)
+          throw error
+        }
+      } else {
+        console.log('👤 Existing user signed in:', result.user.uid)
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Email link sign-in failed:', error)
+      
+      if (error.code === 'auth/invalid-action-code') {
+        throw new Error('This sign-in link is invalid or has expired. Please request a new one.')
+      } else if (error.code === 'auth/expired-action-code') {
+        throw new Error('This sign-in link has expired. Please request a new one.')
+      } else {
+        throw error
+      }
+    }
+  }
+
   // Logout
   async function logout() {
     await signOut(auth)
@@ -482,6 +637,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     signup,
     login,
     loginWithGoogle,
+    sendEmailLink,
+    completeEmailLinkSignIn,
+    isEmailLinkSignIn,
     logout,
     acceptInvitation,
     hasPendingInvitation,
