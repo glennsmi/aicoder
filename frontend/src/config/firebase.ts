@@ -1,13 +1,14 @@
-// Firebase configuration for aicoder.guru
-// Firebase Console: https://console.firebase.google.com/project/aicoder-guru/settings/general
+// Firebase configuration from environment variables
+// Copy frontend/.env.example to frontend/.env.local and fill in your Firebase credentials
+// Get these from: https://console.firebase.google.com/project/YOUR_PROJECT/settings/general
 export const firebaseConfig = {
-  apiKey: "AIzaSyCk6kXTYXXn2t3pvV2dxIPC4HQrJ4Uq-IY",
-  authDomain: "aicoder-guru.firebaseapp.com",
-  projectId: "aicoder-guru",
-  storageBucket: "aicoder-guru.firebasestorage.app",
-  messagingSenderId: "68953395443",
-  appId: "1:68953395443:web:289570a7f26ea54db96786",
-  measurementId: "G-8CVEM8VP7S"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Firebase emulator configuration for local development
