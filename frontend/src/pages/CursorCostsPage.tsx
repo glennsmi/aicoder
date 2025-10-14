@@ -11,7 +11,6 @@ import AccountSettingsModal from '@/components/AccountSettingsModal'
 import CurrencySelector from '@/components/CurrencySelector'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import ThemeToggle from '@/components/ThemeToggle'
-import Navigation from '@/components/Navigation'
 import AdminPage from './AdminPage'
 import AboutPage from './AboutPage'
 import { useCurrency } from '../hooks/useCurrency'
@@ -217,57 +216,6 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
                   </div>
                 </div>
 
-                <div className="flex flex-row items-center pt-4 ml-10">
-                  {/* Auth Buttons for Guests */}
-                  {!currentUser ? (
-                    <>
-                      <div className="flex items-center justify-center gap-4 mb-4">
-                        {isAdmin && (
-                          <button 
-                            onClick={() => setCurrentPage('admin')}
-                            className="bg-orange-500/20 text-white px-6 py-2 rounded-xl font-semibold hover:bg-orange-500/30 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 backdrop-blur-sm border border-orange-400/30"
-                          >
-                            Admin
-                          </button>
-                        )}
-                                            <button 
-                      onClick={() => setCurrentPage('about')}
-                      className="bg-white/10 text-white px-6 py-2 rounded-xl font-semibold hover:bg-white/20 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 backdrop-blur-sm border border-white/20"
-                    >
-                      About
-                    </button>
-
-                        <button 
-                          onClick={() => openAuthModal('login')}
-                          className="bg-white text-gunmetal px-6 py-2 rounded-xl font-semibold hover:bg-gray-50 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 dark:bg-white dark:text-black"
-                        >
-                          Sign In
-                        </button>
-                        <button 
-                          onClick={() => openAuthModal('signup')}
-                          className="bg-primary-500 text-gunmetal px-6 py-2 rounded-xl font-semibold hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-                        >
-                          Sign Up
-                        </button>
-                      </div>
-
-                     
-                      
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="mb-4">
-                          <Navigation 
-                            onOpenSettings={() => setShowAccountSettings(true)}
-                            onOpenAbout={() => setCurrentPage('about')}
-                            onOpenAdmin={() => setCurrentPage('admin')}
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-20 max-w-3xl mx-auto">

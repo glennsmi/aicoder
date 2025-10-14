@@ -1,14 +1,24 @@
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useOrgAnalytics } from '../hooks/useOrgAnalytics'
+import { useCurrency } from '../hooks/useCurrency'
 
 export default function DashboardPage() {
-  const { organization, members, loading } = useOrganization()
+  const { organization, members, loading: orgLoading } = useOrganization()
+  const analytics = useOrgAnalytics()
+  const { formatCurrency } = useCurrency()
 
-  if (loading) {
+  if (orgLoading || analytics.loading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
       </div>
     )
+  }
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
+    return num.toFixed(0)
   }
 
   return (
@@ -22,6 +32,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
@@ -29,6 +40,9 @@ export default function DashboardPage() {
               <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Members</p>
               <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
                 {members.length}
+              </p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                {analytics.activeUsers} active
               </p>
             </div>
             <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/20 rounded-lg flex items-center justify-center">
@@ -42,25 +56,12 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Active Users</p>
+              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Tokens</p>
               <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
-                {members.filter(m => m.status === 'active').length}
+                {formatNumber(analytics.totalTokens)}
               </p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Usage</p>
-              <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
-                0
+              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
+                {analytics.totalRequests} requests
               </p>
             </div>
             <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center">
@@ -76,7 +77,10 @@ export default function DashboardPage() {
             <div>
               <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Cost</p>
               <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
-                £0.00
+                {formatCurrency(analytics.totalCost)}
+              </p>
+              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
+                All time
               </p>
             </div>
             <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex items-center justify-center">
@@ -86,22 +90,133 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-        <h2 className="text-xl font-semibold text-gunmetal-900 dark:text-white mb-4">
-          Recent Activity
-        </h2>
-        <div className="text-center py-12">
-          <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-          <p className="text-gray-500 dark:text-gray-400">No activity data yet</p>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-            Start tracking your team's AI coding usage
-          </p>
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Avg per User</p>
+              <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
+                {formatCurrency(analytics.activeUsers > 0 ? analytics.totalCost / analytics.activeUsers : 0)}
+              </p>
+              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
+                per active user
+              </p>
+            </div>
+            <div className="w-12 h-12 bg-green-100 dark:bg-green-900/20 rounded-lg flex items-center justify-center">
+              <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Top Users */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
+            Top Users by Cost
+          </h2>
+          {analytics.userStats.length > 0 ? (
+            <div className="space-y-3">
+              {analytics.userStats.slice(0, 5).map((userStat) => (
+                <div key={userStat.userId} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-primary-500 rounded-full flex items-center justify-center text-gunmetal-900 font-semibold text-sm">
+                      {userStat.email[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gunmetal-900 dark:text-white">
+                        {userStat.displayName}
+                      </p>
+                      <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                        {userStat.email}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-gunmetal-900 dark:text-white">
+                      {formatCurrency(userStat.totalCost)}
+                    </p>
+                    <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                      {formatNumber(userStat.totalTokens)} tokens
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              No usage data yet
+            </div>
+          )}
+        </div>
+
+        {/* Model Usage */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
+            Usage by Model
+          </h2>
+          {analytics.modelStats.length > 0 ? (
+            <div className="space-y-4">
+              {analytics.modelStats.map((modelStat) => (
+                <div key={modelStat.model}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gunmetal-900 dark:text-white">
+                      {modelStat.model}
+                    </span>
+                    <span className="text-sm font-semibold text-gunmetal-900 dark:text-white">
+                      {formatCurrency(modelStat.totalCost)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-primary-500 h-2 rounded-full"
+                      style={{ width: `${modelStat.percentage}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gunmetal-600 dark:text-gray-400 mt-1">
+                    {modelStat.percentage.toFixed(1)}% of total cost
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              No model data yet
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Team Stats if available */}
+      {analytics.teamStats.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
+            Team Performance
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {analytics.teamStats.map((teamStat) => (
+              <div key={teamStat.teamId} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                <h3 className="font-semibold text-gunmetal-900 dark:text-white mb-2">
+                  {teamStat.teamName}
+                </h3>
+                <div className="space-y-1 text-sm">
+                  <p className="text-gunmetal-600 dark:text-gray-400">
+                    {teamStat.memberCount} members
+                  </p>
+                  <p className="text-gunmetal-900 dark:text-white font-semibold">
+                    {formatCurrency(teamStat.totalCost)}
+                  </p>
+                  <p className="text-gunmetal-600 dark:text-gray-400">
+                    {formatNumber(teamStat.totalTokens)} tokens
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

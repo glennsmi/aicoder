@@ -160,6 +160,11 @@ To unsubscribe, please log in and update your email preferences.
   }
 });
 
+// Import new Cloud Functions
+export { createTeam } from './teams/createTeam'
+export { addTeamMember } from './teams/addTeamMember'
+export { testApiConnection, addApiConnection, syncApiConnection } from './connectors/manageConnection'
+
 // Function to send welcome email when a new user is created in Firebase Auth
 export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.user().onCreate(async (user) => {
   try {
