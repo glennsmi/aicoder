@@ -7,8 +7,22 @@ export default function PricingPage() {
           <h1 className="text-5xl md:text-6xl font-bold mb-6 text-neutral-900 dark:text-white">
             Simple, Transparent Pricing
           </h1>
-          <p className="text-xl text-neutral-700 dark:text-sand-300 leading-relaxed">
+          <p className="text-xl text-neutral-700 dark:text-sand-300 leading-relaxed mb-8">
             Start free, upgrade when you're ready. No hidden fees, cancel anytime.
+          </p>
+          
+          {/* Get Started Free CTA */}
+          <a
+            href="mailto:sales@aicoder.guru?subject=Get%20Started%20Free%20-%20Novice%20Tier"
+            className="inline-flex items-center px-8 py-4 bg-accent-400 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-accent-500 transition-all duration-200 shadow-lg hover:shadow-xl"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Get Started for Free
+          </a>
+          <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-400">
+            No credit card required • Takes 5 minutes to set up
           </p>
         </div>
       </section>
