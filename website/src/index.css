@@ -24,6 +24,7 @@
   --color-secondary-700: #082530;
   --color-secondary-800: #061c24;
   --color-secondary-900: #041318;
+  --color-secondary-950: #020a0c;
 
   --color-gunmetal-50: #f6f7f8;
   --color-gunmetal-100: #e4e7e9;
@@ -35,10 +36,29 @@
   --color-gunmetal-700: #434d58;
   --color-gunmetal-800: #3a424c;
   --color-gunmetal-900: #353a42;
+  --color-gunmetal-950: #1a1d20;
 
+  --color-accent-50: #fef3f2;
+  --color-accent-100: #fee5e2;
+  --color-accent-200: #fecfc7;
+  --color-accent-300: #fdab9d;
+  --color-accent-400: #fb7a63;
   --color-accent-500: #F75C03;
   --color-accent-600: #E54F02;
   --color-accent-700: #D34602;
+  --color-accent-800: #ab3a02;
+  --color-accent-900: #8d3105;
+
+  --color-green-50: #f0fdf4;
+  --color-green-100: #dcfce7;
+  --color-green-200: #bbf7d0;
+  --color-green-300: #86efac;
+  --color-green-400: #4ade80;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-green-800: #166534;
+  --color-green-900: #14532d;
 
   /* Font Family */
   --font-family-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
