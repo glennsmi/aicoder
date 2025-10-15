@@ -130,8 +130,8 @@ export default function Hero() {
                     <div className="text-2xl font-bold text-secondary-700 dark:text-white">£2,341</div>
                     <div className="text-sm text-neutral-700 dark:text-neutral-500">Total Cost</div>
                   </div>
-                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">+23%</div>
+                  <div className="bg-accent-100 dark:bg-accent-900/30 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-accent-600 dark:text-accent-400">+23%</div>
                     <div className="text-sm text-neutral-700 dark:text-neutral-500">vs Last Month</div>
                   </div>
                 </div>

@@ -42,6 +42,18 @@
   --color-sand-800: #7d6943;
   --color-sand-900: #584a30;
 
+  /* Accent - Soft Jade Green (64BFA4) - complementary highlights */
+  --color-accent-50: #f0faf7;
+  --color-accent-100: #dcf3ec;
+  --color-accent-200: #b9e7d9;
+  --color-accent-300: #8dd7c1;
+  --color-accent-400: #64BFA4;
+  --color-accent-500: #4eab90;
+  --color-accent-600: #3d8a75;
+  --color-accent-700: #336e5f;
+  --color-accent-800: #2d584e;
+  --color-accent-900: #284942;
+
   /* Neutrals for UI elements */
   --color-neutral-50: #F8FAFA;
   --color-neutral-200: #D7DFE2;

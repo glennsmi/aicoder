@@ -70,9 +70,9 @@ export default function Features() {
       iconBg: "bg-primary-100 dark:bg-primary-900/30"
     },
     accent: {
-      bg: "bg-primary-500",
-      text: "text-primary-600 dark:text-primary-500",
-      iconBg: "bg-primary-100 dark:bg-primary-900/30"
+      bg: "bg-accent-400",
+      text: "text-accent-600 dark:text-accent-400",
+      iconBg: "bg-accent-100 dark:bg-accent-900/30"
     },
     secondary: {
       bg: "bg-secondary-600",
