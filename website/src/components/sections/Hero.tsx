@@ -28,7 +28,7 @@ export default function Hero() {
 
             {/* Subheadline */}
             <p className="text-xl text-neutral-700 dark:text-sand-300 mb-8 leading-relaxed">
-              Simple, real-time visibility into your team's AI coding tool usage. 
+              <strong>Measure. Motivate. Master AI.</strong> Simple, real-time visibility into your team's AI coding tool usage. 
               Track adoption, optimize costs, and drive productivity with one unified dashboard.
             </p>
 

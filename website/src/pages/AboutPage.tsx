@@ -2,13 +2,13 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen bg-sand-300 dark:bg-secondary-900">
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-white via-primary-50/30 to-white dark:from-secondary-900 dark:via-secondary-800/50 dark:to-secondary-900">
+      <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-sand-300 via-primary-50/30 to-sand-300 dark:from-secondary-900 dark:via-secondary-800/50 dark:to-secondary-900">
         <div className="container mx-auto max-w-4xl text-center">
           <h1 className="text-5xl md:text-6xl font-bold mb-6 text-neutral-900 dark:text-white">
-            Born from a Real Need
+            Measure. Motivate. Master AI.
           </h1>
           <p className="text-xl text-neutral-700 dark:text-sand-300 leading-relaxed">
-            AI Coder started as an internal tool. Now it's helping teams worldwide understand and optimize their AI coding tool usage.
+            AICoder.Guru started as an internal tool. Now it's helping teams worldwide understand and optimize their AI coding tool usage.
           </p>
         </div>
       </section>
@@ -19,7 +19,7 @@ export default function AboutPage() {
           <div className="space-y-8">
             <div>
               <h2 className="text-3xl font-bold text-neutral-900 dark:text-white mb-4">
-                The Problem We Faced
+                Measure. Motivate. Master AI.
               </h2>
               <p className="text-lg text-neutral-700 dark:text-sand-300 leading-relaxed">
                 When AI coding assistants like Cursor and GitHub Copilot started revolutionizing how we write code, we immediately adopted them across our development team. But we quickly ran into a problem: <strong className="text-neutral-900 dark:text-white">we had no visibility into what was actually happening</strong>.
