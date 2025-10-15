@@ -126,7 +126,7 @@ export default function Features() {
         {/* Bottom CTA */}
         <div className="mt-16 text-center">
           <a
-            href="#signup"
+            href="mailto:sales@aicoder.guru?subject=Start%20Tracking%20Team%20Usage%20-%20AICoder.Guru"
             className="inline-flex items-center px-8 py-4 bg-primary-500 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl"
           >
             Start Tracking Your Team's Usage
@@ -135,7 +135,7 @@ export default function Features() {
             </svg>
           </a>
           <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-500">
-            Free forever for individual developers • Team plans start at £49/month
+            Free forever for individual developers • Team plans start at £29/month
           </p>
         </div>
       </div>

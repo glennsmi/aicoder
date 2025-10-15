@@ -73,12 +73,12 @@ export default function Header() {
                 >
                   Sign In
                 </a>
-                <a
-                  href="#signup"
-                  className="px-4 py-2 bg-primary-500 text-secondary-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
-                >
-                  Start Free
-                </a>
+                    <a
+                      href="mailto:sales@aicoder.guru?subject=Start%20Free%20-%20AICoder.Guru"
+                      className="px-4 py-2 bg-primary-500 text-secondary-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
+                    >
+                      Start Free
+                    </a>
               </>
             )}
 

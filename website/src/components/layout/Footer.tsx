@@ -39,7 +39,7 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <a href="#signup" className="text-sm hover:text-accent-400 transition-colors">
+                <a href="mailto:sales@aicoder.guru?subject=Start%20Free%20Trial%20-%20AICoder.Guru" className="text-sm hover:text-accent-400 transition-colors">
                   Start Free Trial
                 </a>
               </li>

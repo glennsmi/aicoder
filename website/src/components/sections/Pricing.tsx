@@ -25,7 +25,7 @@ export default function Pricing() {
         "API connection sync",
         "1-year data retention",
         "Advanced analytics",
-        "Priority support",
+        "Email support (72 hrs)",
       ],
       cta: "Start Free Trial",
       highlighted: false,
@@ -57,7 +57,7 @@ export default function Pricing() {
         "Up to 30 users",
         "Advanced team insights",
         "Custom dashboards",
-        "Priority email support",
+        "Priority email support (24 hrs)",
         "API rate limits increased",
       ],
       cta: "Start Free Trial",
@@ -144,11 +144,17 @@ export default function Pricing() {
 
               {/* CTA Button */}
               <a
-                href="#signup"
+                href={
+                  plan.cta === "Contact Sales" 
+                    ? "mailto:sales@aicoder.guru?subject=Enterprise%20Inquiry%20-%20Grandmaster%20Tier" 
+                    : plan.cta === "Start Free"
+                    ? "mailto:sales@aicoder.guru?subject=Start%20Free%20-%20Novice%20Tier"
+                    : `mailto:sales@aicoder.guru?subject=Start%20Free%20Trial%20-%20${plan.name}%20Tier`
+                }
                 className={`block w-full text-center px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 mb-4 ${
                   plan.highlighted
                     ? 'bg-primary-500 text-secondary-900 hover:bg-primary-600 shadow-md'
-                    : 'bg-gray-100 dark:bg-secondary-800 text-neutral-900 dark:text-white hover:bg-primary-500 hover:text-secondary-900'
+                    : 'bg-neutral-100 dark:bg-secondary-800 text-neutral-900 dark:text-sand-300 hover:bg-primary-500 hover:text-secondary-900'
                 }`}
               >
                 {plan.cta}
