@@ -167,7 +167,7 @@ export default function AboutPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a
-              href="mailto:sales@aicoder.guru?subject=Start%20Free%20Trial%20-%20AICoder.Guru"
+              href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
               className="inline-flex items-center justify-center px-8 py-4 bg-white text-neutral-900 text-lg font-semibold rounded-lg hover:bg-gray-100 transition-all duration-200 shadow-lg"
             >
               Start Free Trial
