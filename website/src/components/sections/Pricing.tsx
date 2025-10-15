@@ -44,7 +44,8 @@ export default function Pricing() {
         "Export reports (PDF/CSV/Excel)",
       ],
       cta: "Start Free Trial",
-      highlighted: false,
+      highlighted: true,
+      badge: "Most Popular",
     },
     {
       name: "Team",
@@ -60,8 +61,7 @@ export default function Pricing() {
         "API rate limits increased",
       ],
       cta: "Start Free Trial",
-      highlighted: true,
-      badge: "Most Popular",
+      highlighted: false,
     },
     {
       name: "Enterprise",
@@ -101,13 +101,13 @@ export default function Pricing() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 max-w-7xl mx-auto">
           {plans.map((plan, index) => (
             <div
               key={index}
-              className={`relative rounded-2xl p-6 border-2 transition-all duration-300 ${
+              className={`relative rounded-xl p-5 border-2 transition-all duration-300 ${
                 plan.highlighted
-                  ? 'border-primary-500 shadow-xl lg:scale-105 bg-white dark:bg-secondary-800'
+                  ? 'border-primary-500 shadow-xl bg-white dark:bg-secondary-800 md:col-span-1'
                   : 'border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 bg-white dark:bg-secondary-900'
               }`}
             >
@@ -121,31 +121,31 @@ export default function Pricing() {
               )}
 
               {/* Plan Name */}
-              <h3 className="text-2xl font-bold text-gunmetal-900 dark:text-white mb-2">
+              <h3 className="text-lg font-bold text-gunmetal-900 dark:text-white mb-2">
                 {plan.name}
               </h3>
 
               {/* Price */}
-              <div className="mb-4">
-                <span className="text-4xl font-bold text-gunmetal-900 dark:text-white">
+              <div className="mb-3">
+                <div className="text-3xl font-bold text-gunmetal-900 dark:text-white">
                   {plan.price}
-                </span>
+                </div>
                 {plan.period && (
-                  <span className="text-gunmetal-600 dark:text-gunmetal-400 ml-2">
+                  <div className="text-sm text-gunmetal-600 dark:text-gunmetal-400">
                     {plan.period}
-                  </span>
+                  </div>
                 )}
               </div>
 
               {/* Description */}
-              <p className="text-gunmetal-600 dark:text-gunmetal-400 mb-6">
+              <p className="text-sm text-gunmetal-600 dark:text-gunmetal-400 mb-4">
                 {plan.description}
               </p>
 
               {/* CTA Button */}
               <a
                 href="#signup"
-                className={`block w-full text-center px-6 py-3 rounded-lg font-semibold transition-all duration-200 mb-8 ${
+                className={`block w-full text-center px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 mb-4 ${
                   plan.highlighted
                     ? 'bg-primary-500 text-secondary-900 hover:bg-primary-600 shadow-md'
                     : 'bg-gray-100 dark:bg-secondary-800 text-gunmetal-900 dark:text-white hover:bg-primary-500 hover:text-secondary-900'
@@ -155,11 +155,11 @@ export default function Pricing() {
               </a>
 
               {/* Features List */}
-              <ul className="space-y-3">
+              <ul className="space-y-2">
                 {plan.features.map((feature, featureIndex) => (
-                  <li key={featureIndex} className="flex items-start gap-3">
+                  <li key={featureIndex} className="flex items-start gap-2">
                     <svg
-                      className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5"
+                      className="w-4 h-4 text-primary-500 flex-shrink-0 mt-0.5"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -171,7 +171,7 @@ export default function Pricing() {
                         d="M5 13l4 4L19 7"
                       />
                     </svg>
-                    <span className="text-gunmetal-700 dark:text-gunmetal-300">
+                    <span className="text-xs text-gunmetal-700 dark:text-gunmetal-300">
                       {feature}
                     </span>
                   </li>
