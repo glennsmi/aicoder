@@ -114,7 +114,7 @@ export default function Pricing() {
               {/* Badge */}
               {plan.badge && (
                 <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                  <span className="px-4 py-1 bg-primary-500 text-secondary-900 text-sm font-semibold rounded-full">
+                  <span className="px-4 py-1 bg-accent-400 text-secondary-900 text-sm font-semibold rounded-full shadow-md">
                     {plan.badge}
                   </span>
                 </div>
@@ -159,7 +159,7 @@ export default function Pricing() {
                 {plan.features.map((feature, featureIndex) => (
                   <li key={featureIndex} className="flex items-start gap-2">
                     <svg
-                      className="w-4 h-4 text-primary-500 flex-shrink-0 mt-0.5"
+                      className="w-4 h-4 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"

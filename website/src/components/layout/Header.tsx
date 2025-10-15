@@ -69,7 +69,7 @@ export default function Header() {
               <>
                 <a
                   href="#signup"
-                  className="hidden md:inline-flex text-neutral-700 dark:text-sand-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors"
+                  className="hidden md:inline-flex text-neutral-700 dark:text-sand-300 hover:text-accent-500 dark:hover:text-accent-400 font-medium transition-colors"
                 >
                   Sign In
                 </a>
