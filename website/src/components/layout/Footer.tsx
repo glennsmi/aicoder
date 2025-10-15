@@ -66,26 +66,6 @@ export default function Footer() {
                   Contact
                 </a>
               </li>
-              <li>
-                <a 
-                  href="https://twitter.com/aicoderguru" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-sm hover:text-accent-400 transition-colors"
-                >
-                  Twitter
-                </a>
-              </li>
-              <li>
-                <a 
-                  href="https://linkedin.com/company/aicoderguru" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-sm hover:text-accent-400 transition-colors"
-                >
-                  LinkedIn
-                </a>
-              </li>
             </ul>
           </div>
 

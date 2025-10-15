@@ -1,10 +1,10 @@
 export default function Pricing() {
   const plans = [
     {
-      name: "Free",
+      name: "Novice",
       price: "£0",
       period: "forever",
-      description: "Perfect for solo developers tracking their own usage",
+      description: "Just starting your AI coding journey",
       features: [
         "Manual CSV upload",
         "Single user",
@@ -16,12 +16,12 @@ export default function Pricing() {
       highlighted: false,
     },
     {
-      name: "Individual Pro",
+      name: "Apprentice",
       price: "£2.99",
       period: "per month",
-      description: "For individual developers who want more features",
+      description: "Developing your AI mastery technique",
       features: [
-        "Everything in Free",
+        "Everything in Novice",
         "API connection sync",
         "1-year data retention",
         "Advanced analytics",
@@ -31,12 +31,12 @@ export default function Pricing() {
       highlighted: false,
     },
     {
-      name: "Small Team",
+      name: "Sensei",
       price: "£29",
       period: "per month",
-      description: "Perfect for small development teams",
+      description: "Teaching and leading small teams",
       features: [
-        "Everything in Individual Pro",
+        "Everything in Apprentice",
         "Up to 10 users",
         "Team analytics & breakdowns",
         "Role-based access control",
@@ -48,12 +48,12 @@ export default function Pricing() {
       badge: "Most Popular",
     },
     {
-      name: "Team",
+      name: "Master",
       price: "£49",
       period: "per month",
-      description: "For growing teams and managers",
+      description: "Leading larger teams to excellence",
       features: [
-        "Everything in Small Team",
+        "Everything in Sensei",
         "Up to 30 users",
         "Advanced team insights",
         "Custom dashboards",
@@ -64,12 +64,12 @@ export default function Pricing() {
       highlighted: false,
     },
     {
-      name: "Enterprise",
+      name: "Grandmaster",
       price: "Custom",
       period: "pricing",
-      description: "For large organizations with specific needs",
+      description: "Ultimate wisdom and scale for enterprises",
       features: [
-        "Everything in Team",
+        "Everything in Master",
         "Unlimited users",
         "Custom integrations",
         "Dedicated account manager",

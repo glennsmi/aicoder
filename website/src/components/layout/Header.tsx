@@ -18,9 +18,9 @@ export default function Header() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  const navigation = [
-    { name: 'About', href: '/about' },
-  ]
+      const navigation: { name: string; href: string }[] = [
+        // { name: 'About', href: '/about' },
+      ]
 
   return (
     <header
