@@ -26,14 +26,14 @@ export default function Footer() {
             <h3 className="font-semibold text-white mb-4">Product</h3>
             <ul className="space-y-2">
               <li>
-                <a href="#features" className="text-sm hover:text-accent-400 transition-colors">
+                <Link to="/features" className="text-sm hover:text-accent-400 transition-colors">
                   Features
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#pricing" className="text-sm hover:text-accent-400 transition-colors">
+                <Link to="/pricing" className="text-sm hover:text-accent-400 transition-colors">
                   Pricing
-                </a>
+                </Link>
               </li>
               <li>
                 <Link to="/faq" className="text-sm hover:text-accent-400 transition-colors">

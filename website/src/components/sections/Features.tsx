@@ -1,141 +1,126 @@
 export default function Features() {
-  const features = [
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-      title: "Model Breakdown Analytics",
-      description: "Track which AI models your team uses and optimize costs by model performance.",
-      color: "primary"
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-        </svg>
-      ),
-      title: "Token Usage Analysis",
-      description: "Detailed breakdown of input, output, and cached tokens with cost optimization insights.",
-      color: "accent"
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-        </svg>
-      ),
-      title: "Interactive Charts",
-      description: "Visualize usage patterns over time with drillable, filterable charts.",
-      color: "primary"
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-      ),
-      title: "Team Leaderboards",
-      description: "See top users and teams to encourage adoption and healthy competition.",
-      color: "secondary"
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-        </svg>
-      ),
-      title: "Historical Data",
-      description: "Track trends and compare periods to see how AI adoption evolves.",
-      color: "accent"
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      ),
-      title: "API Integrations",
-      description: "Direct integrations with Cursor, GitHub Copilot, and more AI coding tools.",
-      color: "secondary"
-    },
-  ]
-
-  const colorClasses = {
-    primary: {
-      bg: "bg-primary-500",
-      text: "text-primary-600 dark:text-primary-400",
-      iconBg: "bg-primary-100 dark:bg-primary-900/30"
-    },
-    accent: {
-      bg: "bg-accent-400",
-      text: "text-accent-600 dark:text-accent-400",
-      iconBg: "bg-accent-100 dark:bg-accent-900/30"
-    },
-    secondary: {
-      bg: "bg-secondary-600",
-      text: "text-secondary-600 dark:text-white",
-      iconBg: "bg-secondary-100 dark:bg-secondary-700"
-    }
-  }
-
   return (
     <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 bg-sand-100 dark:bg-secondary-950">
       <div className="container mx-auto max-w-7xl">
         {/* Section Header */}
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="text-neutral-900 dark:text-white">Everything You Need to</span>
+            <span className="text-neutral-900 dark:text-white">Powerful Analytics</span>
             <br />
             <span className="bg-gradient-to-r from-primary-500 to-primary-500 bg-clip-text text-transparent">
-              Monitor AI Adoption
+              Built for Teams
             </span>
           </h2>
           <p className="text-xl text-neutral-700 dark:text-sand-300 max-w-3xl mx-auto">
-            Comprehensive analytics built for engineering managers
+            Track every aspect of your team's AI coding tool usage
           </p>
         </div>
 
-        {/* Features Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {features.map((feature, index) => {
-            const colors = colorClasses[feature.color as keyof typeof colorClasses]
-            return (
-              <div
-                key={index}
-                className="bg-sand-300 dark:bg-secondary-900 rounded-xl p-6 border border-neutral-200 dark:border-neutral-700 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-lg transition-all duration-300 group"
-              >
-                <div className={`w-12 h-12 ${colors.iconBg} rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
-                  <div className={colors.text}>
-                    {feature.icon}
-                  </div>
-                </div>
-                <h3 className="text-xl font-semibold text-neutral-900 dark:text-white mb-3">
-                  {feature.title}
-                </h3>
-                <p className="text-neutral-700 dark:text-neutral-500 leading-relaxed">
-                  {feature.description}
-                </p>
+        {/* Feature 1: Model Breakdown */}
+        <div className="mb-20">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center mb-6">
+                <svg className="w-6 h-6 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
               </div>
-            )
-          })}
+              <h3 className="text-3xl font-bold text-neutral-900 dark:text-white mb-4">
+                Model Breakdown Analytics
+              </h3>
+              <p className="text-lg text-neutral-700 dark:text-sand-300 mb-6 leading-relaxed">
+                See exactly which AI models your team uses - Claude 4.5 Sonnet, GPT-5, Gemini, and more. Track usage patterns, costs per model, and identify which models deliver the best value for your team.
+              </p>
+              <ul className="space-y-3 mb-6">
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-neutral-700 dark:text-sand-300">Input, output, and total token counts per model</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-neutral-700 dark:text-sand-300">Cost breakdown in USD and GBP</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-neutral-700 dark:text-sand-300">Cost efficiency metrics per million tokens</span>
+                </li>
+              </ul>
+            </div>
+            <div className="bg-white dark:bg-secondary-800 rounded-xl shadow-2xl p-2 border border-neutral-200 dark:border-neutral-700">
+              <img 
+                src="/images/model-breakdown.png" 
+                alt="Model Breakdown Analytics Table" 
+                className="rounded-lg w-full"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Bottom CTA */}
-        <div className="mt-16 text-center">
+        {/* Feature 2: Token Breakdown */}
+        <div className="mb-12">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div className="order-2 md:order-1 bg-white dark:bg-secondary-800 rounded-xl shadow-2xl p-2 border border-neutral-200 dark:border-neutral-700">
+              <img 
+                src="/images/token-breakdown.png" 
+                alt="Token Usage Breakdown" 
+                className="rounded-lg w-full"
+              />
+            </div>
+            <div className="order-1 md:order-2">
+              <div className="w-12 h-12 bg-accent-100 dark:bg-accent-900/30 rounded-lg flex items-center justify-center mb-6">
+                <svg className="w-6 h-6 text-accent-600 dark:text-accent-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                </svg>
+              </div>
+              <h3 className="text-3xl font-bold text-neutral-900 dark:text-white mb-4">
+                Detailed Token Analysis
+              </h3>
+              <p className="text-lg text-neutral-700 dark:text-sand-300 mb-6 leading-relaxed">
+                Understand exactly where your tokens are being spent with comprehensive breakdowns including cache writes, cache reads, and cache hits for maximum cost optimization.
+              </p>
+              <ul className="space-y-3 mb-6">
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-neutral-700 dark:text-sand-300">Input tokens with and without cache writes</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-neutral-700 dark:text-sand-300">Output token tracking</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-neutral-700 dark:text-sand-300">Cache efficiency monitoring (write/read ratios)</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA */}
+        <div className="text-center mt-16">
           <a
             href="/features"
             className="inline-flex items-center px-8 py-4 bg-primary-500 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl"
           >
-            Explore All Features in Detail
+            See More Features in Detail
             <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </a>
           <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-500">
-            See detailed analytics with real screenshots and examples
+            Interactive charts, team leaderboards, historical data, and more
           </p>
         </div>
       </div>
