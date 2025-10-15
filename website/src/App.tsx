@@ -3,6 +3,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider } from './contexts/AuthContext'
 import Header from './components/layout/Header'
 import HomePage from './pages/HomePage'
+import AboutPage from './pages/AboutPage'
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
             <Header />
             <Routes>
               <Route path="/" element={<HomePage />} />
+              <Route path="/about" element={<AboutPage />} />
             </Routes>
           </div>
         </Router>
