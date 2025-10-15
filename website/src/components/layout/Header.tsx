@@ -36,8 +36,8 @@ export default function Header() {
           <Link to="/" className="flex items-center gap-3 group">
             <img
               src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
-              alt="AICoder.Guru"
-              className="h-9 transition-transform group-hover:scale-105"
+              alt="AICoder.Guru - Measure. Motivate. Master AI."
+              className="h-12 transition-transform group-hover:scale-105"
             />
           </Link>
 
