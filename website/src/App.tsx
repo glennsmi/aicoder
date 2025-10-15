@@ -5,6 +5,7 @@ import Header from './components/layout/Header'
 import Footer from './components/layout/Footer'
 import HomePage from './pages/HomePage'
 import AboutPage from './pages/AboutPage'
+import FeaturesPage from './pages/FeaturesPage'
 import FAQPage from './pages/FAQPage'
 import PrivacyPage from './pages/PrivacyPage'
 import TermsPage from './pages/TermsPage'
@@ -22,6 +23,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/about" element={<AboutPage />} />
+                <Route path="/features" element={<FeaturesPage />} />
                 <Route path="/faq" element={<FAQPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />

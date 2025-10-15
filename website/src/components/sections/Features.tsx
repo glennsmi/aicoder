@@ -7,7 +7,7 @@ export default function Features() {
         </svg>
       ),
       title: "Model Breakdown Analytics",
-      description: "See exactly which AI models your team uses (GPT-5, Claude, Gemini, etc.). Track usage patterns and costs by model to optimize for performance.",
+      description: "Track which AI models your team uses and optimize costs by model performance.",
       color: "primary"
     },
     {
@@ -16,19 +16,9 @@ export default function Features() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
         </svg>
       ),
-      title: "Token Usage by Type",
-      description: "Detailed breakdown of input, output, and cached tokens. Understand exactly where tokens are spent and identify optimization opportunities.",
+      title: "Token Usage Analysis",
+      description: "Detailed breakdown of input, output, and cached tokens with cost optimization insights.",
       color: "accent"
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-      ),
-      title: "User & Team Leaderboards",
-      description: "League tables showing top users by activity and cost. Drill down by user or team to see individual patterns and encourage healthy adoption.",
-      color: "secondary"
     },
     {
       icon: (
@@ -37,9 +27,19 @@ export default function Features() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
         </svg>
       ),
-      title: "Drillable Interactive Charts",
-      description: "Click through charts to explore deeper insights. Filter by date range, user, team, or model. Export filtered data for custom analysis.",
+      title: "Interactive Charts",
+      description: "Visualize usage patterns over time with drillable, filterable charts.",
       color: "primary"
+    },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      ),
+      title: "Team Leaderboards",
+      description: "See top users and teams to encourage adoption and healthy competition.",
+      color: "secondary"
     },
     {
       icon: (
@@ -47,8 +47,8 @@ export default function Features() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
         </svg>
       ),
-      title: "Historical Data Storage",
-      description: "All usage data stored over time. Track trends, compare periods, and see how AI adoption and costs evolve across your organization.",
+      title: "Historical Data",
+      description: "Track trends and compare periods to see how AI adoption evolves.",
       color: "accent"
     },
     {
@@ -57,8 +57,8 @@ export default function Features() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       ),
-      title: "API Provider Integrations",
-      description: "Direct API integrations with Cursor, GitHub Copilot, and more. Automatic data sync from your AI tool providers for seamless monitoring.",
+      title: "API Integrations",
+      description: "Direct integrations with Cursor, GitHub Copilot, and more AI coding tools.",
       color: "secondary"
     },
   ]
@@ -82,7 +82,7 @@ export default function Features() {
   }
 
   return (
-    <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-secondary-950">
+    <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 bg-sand-100 dark:bg-secondary-950">
       <div className="container mx-auto max-w-7xl">
         {/* Section Header */}
         <div className="text-center mb-16">
@@ -94,7 +94,7 @@ export default function Features() {
             </span>
           </h2>
           <p className="text-xl text-neutral-700 dark:text-sand-300 max-w-3xl mx-auto">
-            Built specifically for engineering managers who want visibility into their team's AI coding tool usage
+            Comprehensive analytics built for engineering managers
           </p>
         </div>
 
@@ -105,7 +105,7 @@ export default function Features() {
             return (
               <div
                 key={index}
-                className="bg-sand-300 dark:bg-secondary-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-lg transition-all duration-300 group"
+                className="bg-sand-300 dark:bg-secondary-900 rounded-xl p-6 border border-neutral-200 dark:border-neutral-700 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-lg transition-all duration-300 group"
               >
                 <div className={`w-12 h-12 ${colors.iconBg} rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
                   <div className={colors.text}>
@@ -126,20 +126,19 @@ export default function Features() {
         {/* Bottom CTA */}
         <div className="mt-16 text-center">
           <a
-            href="mailto:sales@aicoder.guru?subject=Start%20Tracking%20Team%20Usage%20-%20AICoder.Guru"
+            href="/features"
             className="inline-flex items-center px-8 py-4 bg-primary-500 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl"
           >
-            Start Tracking Your Team's Usage
+            Explore All Features in Detail
             <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </a>
           <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-500">
-            Free forever for individual developers • Team plans start at £29/month
+            See detailed analytics with real screenshots and examples
           </p>
         </div>
       </div>
     </section>
   )
 }
-
