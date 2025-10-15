@@ -185,7 +185,7 @@ export default function Pricing() {
         <div className="mt-16 text-center">
           <p className="text-neutral-700 dark:text-neutral-500">
             Questions about pricing?{' '}
-            <a href="#faq" className="text-primary-500 hover:text-primary-600 font-semibold">
+            <a href="/faq" className="text-primary-500 hover:text-primary-600 font-semibold">
               Check our FAQ
             </a>
             {' '}or{' '}

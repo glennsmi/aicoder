@@ -34,6 +34,11 @@ export default function Footer() {
                 </a>
               </li>
               <li>
+                <Link to="/faq" className="text-sm hover:text-accent-400 transition-colors">
+                  FAQ
+                </Link>
+              </li>
+              <li>
                 <a href="#signup" className="text-sm hover:text-accent-400 transition-colors">
                   Start Free Trial
                 </a>
