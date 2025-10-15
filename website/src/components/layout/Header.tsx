@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import ThemeToggle from '../ThemeToggle'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -32,14 +31,14 @@ export default function Header() {
     >
       <nav className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-3 group">
-            <img
-              src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
-              alt="AICoder.Guru - Measure. Motivate. Master AI."
-              className="h-12 transition-transform group-hover:scale-105"
-            />
-          </Link>
+              {/* Logo */}
+              <a href="/" className="flex items-center gap-3 group">
+                <img
+                  src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+                  alt="AICoder.Guru - Measure. Motivate. Master AI."
+                  className="h-12 transition-transform group-hover:scale-105"
+                />
+              </a>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">

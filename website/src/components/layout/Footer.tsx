@@ -9,11 +9,13 @@ export default function Footer() {
         <div className="grid md:grid-cols-4 gap-8">
           {/* Logo & About */}
           <div className="md:col-span-1">
-            <img 
-              src="/logos/logo-dark.png" 
-              alt="AICoder.Guru - Measure. Motivate. Master AI." 
-              className="h-16 mb-4"
-            />
+            <a href="/" className="inline-block mb-4 group">
+              <img 
+                src="/logos/logo-dark.png" 
+                alt="AICoder.Guru - Measure. Motivate. Master AI." 
+                className="h-16 transition-transform group-hover:scale-105"
+              />
+            </a>
             <p className="text-sm text-sand-300/80 leading-relaxed">
               Measure. Motivate. Master AI. Simple analytics for your team's AI coding tools.
             </p>

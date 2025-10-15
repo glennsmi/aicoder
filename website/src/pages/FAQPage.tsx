@@ -51,7 +51,7 @@ export default function FAQPage() {
     },
     {
       question: "Do you offer discounts for annual billing?",
-      answer: "Yes! Annual subscriptions receive a 20% discount compared to monthly billing. For example, Sensei is £29/month or £278/year (save £70). Contact us at sales@aicoder.guru to set up annual billing."
+      answer: "Yes! Annual subscriptions receive a 20% discount compared to monthly billing. For example, Sensei is £29/month or £290/year (save £58). Choose annual billing at checkout to save."
     },
     {
       question: "Can I switch between tiers?",
@@ -75,7 +75,7 @@ export default function FAQPage() {
     },
     {
       question: "Do you support SSO or SAML?",
-      answer: "Yes, on the Grandmaster (Enterprise) tier. We support Google SSO, Microsoft Azure AD, Okta, and custom SAML providers. This ensures secure, centralized authentication for large organizations."
+      answer: "(Coming soon) On the Grandmaster (Enterprise) tier. We support Google SSO, Microsoft Azure AD, Okta, and custom SAML providers. This ensures secure, centralized authentication for large organizations."
     },
     {
       question: "What kind of support do you offer?",
