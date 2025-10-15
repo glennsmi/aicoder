@@ -73,12 +73,13 @@ export default function Pricing() {
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
           {plans.map((plan, index) => (
-            <div
+            <a
               key={index}
-              className={`relative bg-sand-100 dark:bg-secondary-800 rounded-xl p-6 border-2 transition-all duration-300 ${
+              href="/pricing"
+              className={`relative bg-sand-100 dark:bg-secondary-800 rounded-xl p-6 border-2 transition-all duration-300 cursor-pointer block ${
                 plan.badge
-                  ? 'border-primary-500 shadow-xl'
-                  : 'border-neutral-200 dark:border-neutral-700 hover:border-primary-500'
+                  ? 'border-primary-500 shadow-xl hover:shadow-2xl'
+                  : 'border-neutral-200 dark:border-neutral-700 hover:border-primary-500 hover:shadow-lg'
               }`}
             >
               {/* Badge */}
@@ -128,7 +129,7 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </a>
           ))}
         </div>
 
