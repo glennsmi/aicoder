@@ -10,7 +10,7 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <Router>
-          <div className="min-h-screen bg-white dark:bg-secondary-900 transition-colors">
+          <div className="min-h-screen bg-sand-300 dark:bg-secondary-900 transition-colors">
             <Header />
             <Routes>
               <Route path="/" element={<HomePage />} />

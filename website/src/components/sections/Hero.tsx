@@ -17,17 +17,17 @@ export default function Hero() {
 
             {/* Main Headline */}
             <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
-              <span className="text-gunmetal-900 dark:text-white">
+              <span className="text-neutral-900 dark:text-white">
                 Monitor AI Coding
               </span>
               <br />
-              <span className="bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-primary-500 to-primary-500 bg-clip-text text-transparent">
                 Across Your Team
               </span>
             </h1>
 
             {/* Subheadline */}
-            <p className="text-xl text-gunmetal-600 dark:text-gunmetal-300 mb-8 leading-relaxed">
+            <p className="text-xl text-neutral-700 dark:text-sand-300 mb-8 leading-relaxed">
               Simple, real-time visibility into your team's AI coding tool usage. 
               Track adoption, optimize costs, and drive productivity with one unified dashboard.
             </p>
@@ -40,7 +40,7 @@ export default function Hero() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-gunmetal-700 dark:text-gunmetal-300 font-medium">
+                <span className="text-neutral-700 dark:text-sand-300 font-medium">
                   5-minute setup
                 </span>
               </div>
@@ -50,7 +50,7 @@ export default function Hero() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-gunmetal-700 dark:text-gunmetal-300 font-medium">
+                <span className="text-neutral-700 dark:text-sand-300 font-medium">
                   No credit card required
                 </span>
               </div>
@@ -60,7 +60,7 @@ export default function Hero() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-gunmetal-700 dark:text-gunmetal-300 font-medium">
+                <span className="text-neutral-700 dark:text-sand-300 font-medium">
                   Team analytics included
                 </span>
               </div>
@@ -70,7 +70,7 @@ export default function Hero() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-gunmetal-700 dark:text-gunmetal-300 font-medium">
+                <span className="text-neutral-700 dark:text-sand-300 font-medium">
                   Multi-platform support
                 </span>
               </div>
@@ -89,7 +89,7 @@ export default function Hero() {
               </a>
               <a
                 href="#demo"
-                className="inline-flex items-center justify-center px-8 py-4 bg-white dark:bg-secondary-800 border-2 border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white text-lg font-semibold rounded-lg hover:border-primary-500 dark:hover:border-primary-500 transition-all duration-200"
+                className="inline-flex items-center justify-center px-8 py-4 bg-sand-100 dark:bg-secondary-800 border-2 border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white text-lg font-semibold rounded-lg hover:border-primary-500 dark:hover:border-primary-500 transition-all duration-200"
               >
                 Watch Demo
                 <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,7 +100,7 @@ export default function Hero() {
             </div>
 
             {/* Social Proof */}
-            <p className="mt-8 text-sm text-gunmetal-500 dark:text-gunmetal-400">
+            <p className="mt-8 text-sm text-neutral-500 dark:text-neutral-500">
               Used by engineering teams at startups, scale-ups, and enterprises worldwide
             </p>
           </div>
@@ -108,31 +108,31 @@ export default function Hero() {
           {/* Right Column - Visual */}
           <div className="relative">
             {/* Dashboard Preview */}
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-secondary-800">
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700 bg-sand-100 dark:bg-secondary-800">
               {/* Mock Dashboard */}
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold text-gunmetal-900 dark:text-white">Team Usage Overview</h3>
-                  <div className="text-sm text-gunmetal-500 dark:text-gunmetal-400">Last 30 days</div>
+                  <h3 className="text-lg font-semibold text-neutral-900 dark:text-white">Team Usage Overview</h3>
+                  <div className="text-sm text-neutral-500 dark:text-neutral-500">Last 30 days</div>
                 </div>
                 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg p-4">
                     <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">87%</div>
-                    <div className="text-sm text-gunmetal-600 dark:text-gunmetal-400">Adoption Rate</div>
+                    <div className="text-sm text-neutral-700 dark:text-neutral-500">Adoption Rate</div>
                   </div>
-                  <div className="bg-accent-50 dark:bg-accent-900/20 rounded-lg p-4">
-                    <div className="text-2xl font-bold text-accent-600 dark:text-accent-500">32</div>
-                    <div className="text-sm text-gunmetal-600 dark:text-gunmetal-400">Active Users</div>
+                  <div className="bg-primary-50 dark:bg-primary-900/20 rounded-lg p-4">
+                    <div className="text-2xl font-bold text-primary-600 dark:text-primary-500">32</div>
+                    <div className="text-sm text-neutral-700 dark:text-neutral-500">Active Users</div>
                   </div>
                   <div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
                     <div className="text-2xl font-bold text-secondary-700 dark:text-white">£2,341</div>
-                    <div className="text-sm text-gunmetal-600 dark:text-gunmetal-400">Total Cost</div>
+                    <div className="text-sm text-neutral-700 dark:text-neutral-500">Total Cost</div>
                   </div>
                   <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
                     <div className="text-2xl font-bold text-green-600 dark:text-green-400">+23%</div>
-                    <div className="text-sm text-gunmetal-600 dark:text-gunmetal-400">vs Last Month</div>
+                    <div className="text-sm text-neutral-700 dark:text-neutral-500">vs Last Month</div>
                   </div>
                 </div>
 
@@ -146,7 +146,7 @@ export default function Hero() {
             </div>
 
             {/* Floating Badge */}
-            <div className="absolute -top-4 -right-4 bg-accent-500 text-white px-4 py-2 rounded-lg shadow-lg transform rotate-3">
+            <div className="absolute -top-4 -right-4 bg-primary-500 text-white px-4 py-2 rounded-lg shadow-lg transform rotate-3">
               <div className="text-sm font-semibold">Real-time Updates</div>
             </div>
           </div>

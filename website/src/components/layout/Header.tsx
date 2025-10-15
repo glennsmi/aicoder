@@ -47,7 +47,7 @@ export default function Header() {
               <a
                 key={item.name}
                 href={item.href}
-                className="text-gunmetal-700 dark:text-gunmetal-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors"
+                className="text-neutral-700 dark:text-sand-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors"
               >
                 {item.name}
               </a>
@@ -69,7 +69,7 @@ export default function Header() {
               <>
                 <a
                   href="#signup"
-                  className="hidden md:inline-flex text-gunmetal-700 dark:text-gunmetal-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors"
+                  className="hidden md:inline-flex text-neutral-700 dark:text-sand-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors"
                 >
                   Sign In
                 </a>
@@ -110,7 +110,7 @@ export default function Header() {
                   key={item.name}
                   href={item.href}
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="text-gunmetal-700 dark:text-gunmetal-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors px-2"
+                  className="text-neutral-700 dark:text-sand-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors px-2"
                 >
                   {item.name}
                 </a>
@@ -119,7 +119,7 @@ export default function Header() {
                 <a
                   href="#signup"
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="text-gunmetal-700 dark:text-gunmetal-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors px-2"
+                  className="text-neutral-700 dark:text-sand-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors px-2"
                 >
                   Sign In
                 </a>

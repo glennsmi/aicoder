@@ -70,9 +70,9 @@ export default function Features() {
       iconBg: "bg-primary-100 dark:bg-primary-900/30"
     },
     accent: {
-      bg: "bg-accent-500",
-      text: "text-accent-600 dark:text-accent-500",
-      iconBg: "bg-accent-100 dark:bg-accent-900/30"
+      bg: "bg-primary-500",
+      text: "text-primary-600 dark:text-primary-500",
+      iconBg: "bg-primary-100 dark:bg-primary-900/30"
     },
     secondary: {
       bg: "bg-secondary-600",
@@ -87,13 +87,13 @@ export default function Features() {
         {/* Section Header */}
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="text-gunmetal-900 dark:text-white">Everything You Need to</span>
+            <span className="text-neutral-900 dark:text-white">Everything You Need to</span>
             <br />
-            <span className="bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-primary-500 to-primary-500 bg-clip-text text-transparent">
               Monitor AI Adoption
             </span>
           </h2>
-          <p className="text-xl text-gunmetal-600 dark:text-gunmetal-300 max-w-3xl mx-auto">
+          <p className="text-xl text-neutral-700 dark:text-sand-300 max-w-3xl mx-auto">
             Built specifically for engineering managers who want visibility into their team's AI coding tool usage
           </p>
         </div>
@@ -105,17 +105,17 @@ export default function Features() {
             return (
               <div
                 key={index}
-                className="bg-white dark:bg-secondary-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-lg transition-all duration-300 group"
+                className="bg-sand-300 dark:bg-secondary-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-lg transition-all duration-300 group"
               >
                 <div className={`w-12 h-12 ${colors.iconBg} rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
                   <div className={colors.text}>
                     {feature.icon}
                   </div>
                 </div>
-                <h3 className="text-xl font-semibold text-gunmetal-900 dark:text-white mb-3">
+                <h3 className="text-xl font-semibold text-neutral-900 dark:text-white mb-3">
                   {feature.title}
                 </h3>
-                <p className="text-gunmetal-600 dark:text-gunmetal-400 leading-relaxed">
+                <p className="text-neutral-700 dark:text-neutral-500 leading-relaxed">
                   {feature.description}
                 </p>
               </div>
@@ -134,7 +134,7 @@ export default function Features() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </a>
-          <p className="mt-4 text-sm text-gunmetal-500 dark:text-gunmetal-400">
+          <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-500">
             Free forever for individual developers • Team plans start at £49/month
           </p>
         </div>

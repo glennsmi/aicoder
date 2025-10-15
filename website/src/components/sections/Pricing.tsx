@@ -84,18 +84,18 @@ export default function Pricing() {
   ]
 
   return (
-    <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8 bg-white dark:bg-secondary-900">
+    <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8 bg-sand-300 dark:bg-secondary-900">
       <div className="container mx-auto max-w-7xl">
         {/* Section Header */}
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="text-gunmetal-900 dark:text-white">Simple, Transparent</span>
+            <span className="text-neutral-900 dark:text-white">Simple, Transparent</span>
             <br />
-            <span className="bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-primary-500 to-primary-500 bg-clip-text text-transparent">
               Pricing
             </span>
           </h2>
-          <p className="text-xl text-gunmetal-600 dark:text-gunmetal-300 max-w-2xl mx-auto">
+          <p className="text-xl text-neutral-700 dark:text-sand-300 max-w-2xl mx-auto">
             Start free, upgrade when you're ready. No hidden fees, cancel anytime.
           </p>
         </div>
@@ -107,8 +107,8 @@ export default function Pricing() {
               key={index}
               className={`relative rounded-xl p-5 border-2 transition-all duration-300 ${
                 plan.highlighted
-                  ? 'border-primary-500 shadow-xl bg-white dark:bg-secondary-800 md:col-span-1'
-                  : 'border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 bg-white dark:bg-secondary-900'
+                  ? 'border-primary-500 shadow-xl bg-sand-100 dark:bg-secondary-800 md:col-span-1'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 bg-sand-300 dark:bg-secondary-900'
               }`}
             >
               {/* Badge */}
@@ -121,24 +121,24 @@ export default function Pricing() {
               )}
 
               {/* Plan Name */}
-              <h3 className="text-lg font-bold text-gunmetal-900 dark:text-white mb-2">
+              <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-2">
                 {plan.name}
               </h3>
 
               {/* Price */}
               <div className="mb-3">
-                <div className="text-3xl font-bold text-gunmetal-900 dark:text-white">
+                <div className="text-3xl font-bold text-neutral-900 dark:text-white">
                   {plan.price}
                 </div>
                 {plan.period && (
-                  <div className="text-sm text-gunmetal-600 dark:text-gunmetal-400">
+                  <div className="text-sm text-neutral-700 dark:text-neutral-500">
                     {plan.period}
                   </div>
                 )}
               </div>
 
               {/* Description */}
-              <p className="text-sm text-gunmetal-600 dark:text-gunmetal-400 mb-4">
+              <p className="text-sm text-neutral-700 dark:text-neutral-500 mb-4">
                 {plan.description}
               </p>
 
@@ -148,7 +148,7 @@ export default function Pricing() {
                 className={`block w-full text-center px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 mb-4 ${
                   plan.highlighted
                     ? 'bg-primary-500 text-secondary-900 hover:bg-primary-600 shadow-md'
-                    : 'bg-gray-100 dark:bg-secondary-800 text-gunmetal-900 dark:text-white hover:bg-primary-500 hover:text-secondary-900'
+                    : 'bg-gray-100 dark:bg-secondary-800 text-neutral-900 dark:text-white hover:bg-primary-500 hover:text-secondary-900'
                 }`}
               >
                 {plan.cta}
@@ -171,7 +171,7 @@ export default function Pricing() {
                         d="M5 13l4 4L19 7"
                       />
                     </svg>
-                    <span className="text-xs text-gunmetal-700 dark:text-gunmetal-300">
+                    <span className="text-xs text-neutral-700 dark:text-sand-300">
                       {feature}
                     </span>
                   </li>
@@ -183,7 +183,7 @@ export default function Pricing() {
 
         {/* FAQ Link */}
         <div className="mt-16 text-center">
-          <p className="text-gunmetal-600 dark:text-gunmetal-400">
+          <p className="text-neutral-700 dark:text-neutral-500">
             Questions about pricing?{' '}
             <a href="#faq" className="text-primary-500 hover:text-primary-600 font-semibold">
               Check our FAQ
