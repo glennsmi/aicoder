@@ -29,7 +29,7 @@ export default function Hero() {
             {/* Subheadline */}
             <p className="text-xl text-neutral-700 dark:text-sand-300 mb-8 leading-relaxed">
               <strong>Measure. Motivate. Master AI.</strong> Simple, real-time visibility into your team's AI coding tool usage. 
-              Track adoption, optimize costs, and drive productivity with one unified dashboard.
+              Track productivity, control costs, and drive adoption with one unified dashboard. Be a guru.
             </p>
 
             {/* Key Benefits */}
@@ -87,7 +87,7 @@ export default function Hero() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
               </a>
-              <a
+              {/* <a
                 href="#demo"
                 className="inline-flex items-center justify-center px-8 py-4 bg-sand-100 dark:bg-secondary-800 border-2 border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white text-lg font-semibold rounded-lg hover:border-primary-500 dark:hover:border-primary-500 transition-all duration-200"
               >
@@ -96,7 +96,7 @@ export default function Hero() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-              </a>
+              </a> */}
             </div>
 
             {/* Social Proof */}
