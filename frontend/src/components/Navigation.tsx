@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { useTheme } from '../contexts/ThemeContext'
+// import { useTheme } from '../contexts/ThemeContext' // unused for now
 
 interface NavigationProps {
   onOpenSettings: () => void
@@ -14,8 +14,8 @@ export default function Navigation({ onOpenSettings, onOpenAbout, onOpenAdmin }:
   const navigate = useNavigate()
   const location = useLocation()
   const { currentUser, user, logout } = useAuth()
-  const { organization, currentMember, hasPermission } = useOrganization()
-  const { actualTheme } = useTheme()
+  const { organization } = useOrganization() // currentMember, hasPermission unused for now
+  // const { actualTheme } = useTheme() // unused for now
   const [showUserMenu, setShowUserMenu] = useState(false)
 
   // Check if user is admin (for legacy admin panel)

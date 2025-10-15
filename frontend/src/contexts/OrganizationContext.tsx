@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { 
   Organization, 
   OrganizationMember, 
@@ -27,6 +27,7 @@ interface OrganizationContextType {
   // Organization data
   organization: Organization | null;
   organizationLoading: boolean;
+  loading: boolean; // Alias for compatibility
   
   // Current user's membership
   currentMember: OrganizationMember | null;
@@ -45,6 +46,8 @@ interface OrganizationContextType {
   hasPermission: (permission: Permission) => boolean;
   canViewUser: (userId: string) => boolean;
   canManageUser: (targetUserId: string, targetRole: OrganizationRole) => boolean;
+  canManageUsers: () => boolean; // Simplified permission check
+  canManageTeams: () => boolean; // Simplified permission check for teams
   canAccessTeam: (teamId: string) => boolean;
   
   // Actions
@@ -297,6 +300,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const value: OrganizationContextType = {
     organization,
     organizationLoading,
+    loading: organizationLoading || membersLoading || teamsLoading, // Combined loading state
     currentMember,
     currentRole,
     members,
@@ -307,6 +311,8 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     hasPermission: checkPermission,
     canViewUser: checkCanViewUser,
     canManageUser: checkCanManageUser,
+    canManageUsers: () => checkPermission(Permission.MANAGE_USERS),
+    canManageTeams: () => checkPermission(Permission.MANAGE_TEAMS),
     canAccessTeam: checkCanAccessTeam,
     refreshOrganization,
     refreshMembers,

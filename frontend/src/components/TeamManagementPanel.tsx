@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { useAuth } from '../contexts/AuthContext'
-import { Team } from '@shared'
+// import { useAuth } from '../contexts/AuthContext' // unused for now
+// import { Team } from '@shared' // unused for now
 
 interface TeamManagementPanelProps {
   onTeamCreated?: () => void
@@ -9,7 +9,7 @@ interface TeamManagementPanelProps {
 
 export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPanelProps) {
   const { teams, members, canManageTeams } = useOrganization()
-  const { user } = useAuth()
+  // const { user } = useAuth() // unused for now
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDescription, setNewTeamDescription] = useState('')

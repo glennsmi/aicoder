@@ -112,7 +112,7 @@ export default function Features() {
         <div className="text-center mt-16">
           <a
             href="/features"
-            className="inline-flex items-center px-8 py-4 bg-primary-500 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl"
+            className="inline-flex items-center px-8 py-4 bg-accent-400 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-jade-600 transition-all duration-200 shadow-lg hover:shadow-xl"
           >
             See More Features in Detail
             <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

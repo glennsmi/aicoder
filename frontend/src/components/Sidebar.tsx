@@ -12,13 +12,13 @@ export default function Sidebar({ onOpenSettings }: SidebarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { currentUser, user, logout } = useAuth()
-  const { organization, currentMember } = useOrganization()
+  const { organization } = useOrganization() // currentMember unused for now
   const { actualTheme, setTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
 
-  // Check if user is admin (for legacy admin panel)
-  const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai'
+  // Check if user is admin (for legacy admin panel) - unused for now
+  // const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai'
 
   // Determine user's role and tier
   const userRole = user?.currentRole || 'individual'
@@ -39,7 +39,7 @@ export default function Sidebar({ onOpenSettings }: SidebarProps) {
 
     const items = []
 
-    // All users get "My Usage"
+    // All users get "My Usage" - the core CSV upload & charts functionality
     items.push({
       label: 'My Usage',
       path: '/',
@@ -50,7 +50,7 @@ export default function Sidebar({ onOpenSettings }: SidebarProps) {
       ),
     })
 
-    // Role-specific items
+    // Admin-specific items
     if (userRole === 'admin' && organization) {
       items.push(
         {

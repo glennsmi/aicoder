@@ -3,16 +3,16 @@ import { collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/
 import { db } from '../config/firebaseApp'
 import { useOrganization } from '../contexts/OrganizationContext'
 
-interface UsageData {
-  userId: string
-  date: string
-  model: string
-  inputTokens: number
-  outputTokens: number
-  totalTokens: number
-  cost: number
-  requests: number
-}
+// interface UsageData {
+//   userId: string
+//   date: string
+//   model: string
+//   inputTokens: number
+//   outputTokens: number
+//   totalTokens: number
+//   cost: number
+//   requests: number
+// }
 
 interface UserStats {
   userId: string

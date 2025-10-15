@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+// import { useNavigate } from 'react-router-dom' // Not currently used
 import { useAuth } from '../contexts/AuthContext'
-import { useOrganization } from '../contexts/OrganizationContext'
+// import { useOrganization } from '../contexts/OrganizationContext' // Not currently used
 import { useTheme } from '../contexts/ThemeContext'
 import { useUserUsageData } from '../hooks/useUserUsageData'
 import CSVImport from '@/components/CSVImport'
@@ -18,9 +18,9 @@ import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
 
 
 export default function CursorCostsPage() {
-  const navigate = useNavigate()
-  const { currentUser, user } = useAuth()
-  const { organization } = useOrganization()
+  // const navigate = useNavigate() // Commented out - not currently used
+  const { currentUser } = useAuth()
+  // const { organization } = useOrganization() // Commented out - not currently used
   const { actualTheme } = useTheme()
   const { 
     loading, 
@@ -67,7 +67,7 @@ export default function CursorCostsPage() {
   })
 
   // Check if user is admin
-  const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai'
+  // const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai' // Commented out - not currently used
 
   // Function to handle Paste Data click - scrolls to import section and triggers paste
   const importSectionRef = useRef<HTMLDivElement>(null);

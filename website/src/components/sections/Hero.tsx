@@ -46,7 +46,7 @@ export default function Hero() {
               </div>
               <div className="flex items-center gap-3">
                 <img 
-                  src="/logos/jade-guru.svg" 
+                  src="/logos/orange-guru.svg" 
                   alt="Guru" 
                   className="w-8 h-8 flex-shrink-0"
                 />
@@ -56,7 +56,7 @@ export default function Hero() {
               </div>
               <div className="flex items-center gap-3">
                 <img 
-                  src="/logos/jade-guru.svg" 
+                  src="/logos/orange-guru.svg" 
                   alt="Guru" 
                   className="w-8 h-8 flex-shrink-0"
                 />
@@ -66,10 +66,12 @@ export default function Hero() {
               </div>
               <div className="flex items-center gap-3">
                 <img 
-                  src="/logos/jade-guru.svg" 
+                  src="/logos/jade-guru.svg"  
                   alt="Guru" 
                   className="w-8 h-8 flex-shrink-0"
                 />
+              
+              
                 <span className="text-neutral-700 dark:text-sand-300 font-medium">
                   Multi-platform support
                 </span>
@@ -80,7 +82,7 @@ export default function Hero() {
             <div className="flex flex-col sm:flex-row gap-4">
               <a
                 href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
-                className="inline-flex items-center justify-center px-8 py-4 bg-primary-500 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+                className="inline-flex items-center justify-center px-8 py-4 bg-accent-400 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
               >
                 Start Free Trial
                 <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,7 +150,7 @@ export default function Hero() {
             </div>
 
             {/* Floating Badge */}
-            <div className="absolute -top-4 -right-4 bg-accent-400 text-secondary-900 px-4 py-2 rounded-lg shadow-lg transform rotate-3">
+            <div className="absolute -top-4 -right-4 bg-primary-300 text-secondary-900 px-4 py-2 rounded-lg shadow-lg transform rotate-3">
               <div className="text-sm font-semibold">Real-time Updates</div>
             </div>
           </div>

@@ -256,7 +256,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const inviteSnapshot = await getDocs(inviteQuery)
 
       let organizationId: string | null = null
-      let userRole: OrganizationRole = 'individual'
+      let userRole: OrganizationRole = 'admin' // Default role for new organization creator
       let userTier: 'free_individual' | 'paid_individual' | 'team' | 'enterprise' = 'free_individual'
 
       // If there's a pending invitation, accept it during signup
@@ -374,7 +374,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const inviteSnapshot = await getDocs(inviteQuery)
 
         let organizationId: string | null = null
-        let userRole: OrganizationRole = 'individual'
+        let userRole: OrganizationRole = 'admin' // Default role for new organization creator
         let userTier: 'free_individual' | 'paid_individual' | 'team' | 'enterprise' = 'free_individual'
 
         if (!inviteSnapshot.empty) {
@@ -540,7 +540,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const inviteSnapshot = await getDocs(inviteQuery)
 
         let organizationId: string | null = null
-        let userRole: OrganizationRole = 'individual'
+        let userRole: OrganizationRole = 'admin' // Default role for new organization creator
         let userTier: 'free_individual' | 'paid_individual' | 'team' | 'enterprise' = 'free_individual'
 
         if (!inviteSnapshot.empty) {

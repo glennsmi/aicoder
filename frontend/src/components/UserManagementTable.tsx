@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { OrganizationMember } from '@shared'
+// import { OrganizationMember } from '@shared' // unused for now
 
 export default function UserManagementTable() {
   const { members, teams, canManageUsers } = useOrganization()
@@ -196,7 +196,11 @@ export default function UserManagementTable() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gunmetal-600 dark:text-gray-400">
-                        {member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : '-'}
+                        {member.joinedAt ? (
+                          member.joinedAt instanceof Date 
+                            ? member.joinedAt.toLocaleDateString() 
+                            : member.joinedAt.toDate().toLocaleDateString()
+                        ) : '-'}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">

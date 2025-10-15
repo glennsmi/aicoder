@@ -29,7 +29,7 @@ export default function PricingPage() {
 
       {/* Stripe Pricing Table */}
       <section className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="container mx-auto max-w-6xl">
+        <div className="container mx-auto max-w-6xl rounded-2xl overflow-hidden">
           <div 
             dangerouslySetInnerHTML={{
               __html: `<stripe-pricing-table 

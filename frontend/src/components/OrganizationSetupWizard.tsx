@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { doc, setDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore'
 import { db } from '../config/firebaseApp'
-import { Organization, PricingTier } from '@cursor-costs/shared'
+import { Organization, OrganizationTier } from '@cursor-costs/shared'
 
 interface OrganizationSetupWizardProps {
   onComplete: (organizationId: string) => void
@@ -14,7 +14,7 @@ type Step = 'info' | 'tier' | 'invite' | 'complete'
 interface OrgFormData {
   name: string
   description: string
-  tier: PricingTier
+  tier: OrganizationTier
   inviteEmails: string[]
 }
 
@@ -70,16 +70,23 @@ export default function OrganizationSetupWizard({ onComplete, onCancel }: Organi
       
       const organizationData: Omit<Organization, 'id'> = {
         name: formData.name,
-        description: formData.description,
-        settings: {
-          defaultCurrency: 'GBP',
-          allowCSVUpload: true,
-          allowAPISync: formData.tier !== 'free_individual',
-        },
         tier: formData.tier,
+        billingPlan: {
+          seats: formData.tier === 'free' ? 1 : 10,
+          usedSeats: 1,
+          pricePerSeat: 0,
+          baseFee: 0,
+          billingCycle: 'monthly' as const,
+        },
+        settings: {
+          apiIntegrations: [],
+          dataRetentionDays: formData.tier === 'free' ? 90 : 365,
+          allowMemberInvites: formData.tier !== 'free',
+          requireTwoFactor: false,
+        },
         createdAt: new Date(),
         updatedAt: new Date(),
-        createdBy: currentUser.uid,
+        ownerId: currentUser.uid,
       }
 
       // Create organization document

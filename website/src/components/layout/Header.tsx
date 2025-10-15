@@ -75,7 +75,7 @@ export default function Header() {
                 </a>
                     <a
                       href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
-                      className="px-4 py-2 bg-primary-500 text-secondary-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
+                      className="px-4 py-2 bg-accent-400 text-secondary-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
                     >
                       Start Free
                     </a>
