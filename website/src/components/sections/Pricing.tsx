@@ -1,8 +1,8 @@
 export default function Pricing() {
   const plans = [
     {
-      name: "Individual",
-      price: "Free",
+      name: "Free",
+      price: "£0",
       period: "forever",
       description: "Perfect for solo developers tracking their own usage",
       features: [
@@ -16,19 +16,48 @@ export default function Pricing() {
       highlighted: false,
     },
     {
-      name: "Team",
-      price: "£49",
+      name: "Individual Pro",
+      price: "£2.99",
       period: "per month",
-      description: "For managers tracking their development team",
+      description: "For individual developers who want more features",
       features: [
-        "Everything in Individual",
-        "Up to 50 users",
-        "Automatic API sync",
+        "Everything in Free",
+        "API connection sync",
+        "1-year data retention",
+        "Advanced analytics",
+        "Priority support",
+      ],
+      cta: "Start Free Trial",
+      highlighted: false,
+    },
+    {
+      name: "Small Team",
+      price: "£29",
+      period: "per month",
+      description: "Perfect for small development teams",
+      features: [
+        "Everything in Individual Pro",
+        "Up to 10 users",
         "Team analytics & breakdowns",
         "Role-based access control",
         "Unlimited data retention",
-        "Priority email support",
         "Export reports (PDF/CSV/Excel)",
+      ],
+      cta: "Start Free Trial",
+      highlighted: false,
+    },
+    {
+      name: "Team",
+      price: "£49",
+      period: "per month",
+      description: "For growing teams and managers",
+      features: [
+        "Everything in Small Team",
+        "Up to 30 users",
+        "Advanced team insights",
+        "Custom dashboards",
+        "Priority email support",
+        "API rate limits increased",
       ],
       cta: "Start Free Trial",
       highlighted: true,
@@ -72,13 +101,13 @@ export default function Pricing() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
           {plans.map((plan, index) => (
             <div
               key={index}
-              className={`relative rounded-2xl p-8 border-2 transition-all duration-300 ${
+              className={`relative rounded-2xl p-6 border-2 transition-all duration-300 ${
                 plan.highlighted
-                  ? 'border-primary-500 shadow-xl scale-105 bg-white dark:bg-secondary-800'
+                  ? 'border-primary-500 shadow-xl lg:scale-105 bg-white dark:bg-secondary-800'
                   : 'border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 bg-white dark:bg-secondary-900'
               }`}
             >

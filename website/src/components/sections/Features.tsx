@@ -7,7 +7,7 @@ export default function Features() {
         </svg>
       ),
       title: "Model Breakdown Analytics",
-      description: "See exactly which AI models your team uses (GPT-4, Claude, Sonnet, etc.). Track usage patterns and costs by model to optimize for performance.",
+      description: "See exactly which AI models your team uses (GPT-5, Claude, Gemini, etc.). Track usage patterns and costs by model to optimize for performance.",
       color: "primary"
     },
     {
