@@ -35,9 +35,9 @@ export default function Header() {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-3 group">
             <img
-              src={actualTheme === 'dark' ? '/logos/fueld_logo_white.svg' : '/logos/fueld-logo-full.svg'}
-              alt="AI Coder"
-              className="h-8 transition-transform group-hover:scale-105"
+              src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+              alt="AICoder.Guru"
+              className="h-9 transition-transform group-hover:scale-105"
             />
           </Link>
 
