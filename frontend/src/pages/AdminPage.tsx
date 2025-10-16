@@ -28,7 +28,7 @@ export default function AdminPage({ onBackToMain }: AdminPageProps) {
   } | null>(null)
 
   // Check if user is admin
-  const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai'
+  const isAdmin = currentUser && currentUser.email === 'glenn@aicoder.guru'
 
   const handleRebuildAggregations = async () => {
     if (!rebuildUserId.trim()) {

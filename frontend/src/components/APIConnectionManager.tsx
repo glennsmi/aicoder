@@ -1,60 +1,123 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { AIProvider } from '@shared'
+import { useAuth } from '../contexts/AuthContext'
+import { 
+  AIProvider, 
+  APIConnection, 
+  TestConnectionRequest,
+  TestConnectionResult,
+  AddConnectionRequest,
+  SyncConnectionRequest,
+  SyncResult
+} from '@cursor-costs/shared'
+import { db } from '../config/firebase'
+import { collection, query, where, onSnapshot } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 
-const AVAILABLE_PROVIDERS: { id: AIProvider; name: string; description: string; icon: string }[] = [
-  {
-    id: 'cursor',
-    name: 'Cursor',
-    description: 'Import usage data directly from Cursor API',
-    icon: '🖱️',
-  },
+const functions = getFunctions()
+
+const AVAILABLE_PROVIDERS: { 
+  id: AIProvider
+  name: string
+  description: string
+  icon: string
+  requiresOrg?: boolean
+  documentationUrl?: string
+}[] = [
   {
     id: 'github_copilot',
     name: 'GitHub Copilot',
     description: 'Track Copilot usage from GitHub Enterprise',
     icon: '🐙',
-  },
-  {
-    id: 'codeium',
-    name: 'Codeium',
-    description: 'Monitor Codeium Teams usage',
-    icon: '🚀',
-  },
-  {
-    id: 'claude_code',
-    name: 'Claude Code (Anthropic)',
-    description: 'Track Claude API usage',
-    icon: '🤖',
+    requiresOrg: true,
+    documentationUrl: 'https://docs.github.com/en/rest/copilot'
   },
   {
     id: 'openai_codex',
     name: 'OpenAI',
     description: 'Monitor OpenAI API usage',
     icon: '✨',
+    requiresOrg: false,
+    documentationUrl: 'https://platform.openai.com/docs/api-reference'
+  },
+  {
+    id: 'anthropic_usage',
+    name: 'Anthropic Claude (Usage)',
+    description: 'Track Claude API organization usage',
+    icon: '🤖',
+    requiresOrg: false,
+    documentationUrl: 'https://docs.claude.com/en/api/usage-cost-api'
+  },
+  {
+    id: 'anthropic_code',
+    name: 'Anthropic Claude Code Analytics',
+    description: 'Track Claude Code developer metrics',
+    icon: '💻',
+    requiresOrg: false,
+    documentationUrl: 'https://docs.claude.com/en/api/claude-code-analytics-api'
+  },
+  {
+    id: 'cursor',
+    name: 'Cursor (CSV Only)',
+    description: 'Manual CSV upload - API not available',
+    icon: '🖱️',
+    requiresOrg: false
+  },
+  {
+    id: 'codeium',
+    name: 'Codeium (Coming Soon)',
+    description: 'Monitor Codeium Teams usage',
+    icon: '🚀',
+    requiresOrg: false
   },
   {
     id: 'tabnine',
-    name: 'Tabnine',
+    name: 'Tabnine (Coming Soon)',
     description: 'Track Tabnine Enterprise usage',
     icon: '⚡',
+    requiresOrg: false
   },
 ]
 
 export default function APIConnectionManager() {
   const { organization } = useOrganization()
-  const [connections, setConnections] = useState<any[]>([]) // TODO: Replace with real data from Firestore
+  const { currentUser } = useAuth()
+  const [connections, setConnections] = useState<APIConnection[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState<AIProvider | null>(null)
+  const [displayName, setDisplayName] = useState('')
   const [credentials, setCredentials] = useState({
     apiKey: '',
+    token: '',
     organizationId: '',
+    enterprise: '',
     additionalConfig: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testResult, setTestResult] = useState<TestConnectionResult | null>(null)
+  const [syncingConnection, setSyncingConnection] = useState<string | null>(null)
+
+  // Load connections from Firestore
+  useEffect(() => {
+    if (!organization?.id) return
+
+    const q = query(
+      collection(db, 'apiConnections'),
+      where('organizationId', '==', organization.id)
+    )
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedConnections = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as APIConnection))
+      setConnections(loadedConnections)
+    })
+
+    return () => unsubscribe()
+  }, [organization?.id])
 
   const handleTestConnection = async () => {
     if (!selectedProvider) return
@@ -64,23 +127,27 @@ export default function APIConnectionManager() {
     setError(null)
 
     try {
-      // TODO: Call Cloud Function to test API connection
-      console.log('Testing connection:', {
+      // Build credentials object based on provider
+      const providerCredentials = buildCredentialsForProvider(selectedProvider, credentials)
+
+      const testRequest: TestConnectionRequest = {
         provider: selectedProvider,
-        credentials,
-      })
+        credentials: providerCredentials
+      }
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      setTestResult({
-        success: true,
-        message: 'Connection successful! Ready to sync data.',
-      })
+      // Call Cloud Function
+      const testApiConnection = httpsCallable<TestConnectionRequest, TestConnectionResult>(
+        functions,
+        'testApiConnection'
+      )
+      const result = await testApiConnection(testRequest)
+      
+      setTestResult(result.data)
     } catch (err: any) {
+      console.error('Test connection error:', err)
       setTestResult({
         success: false,
-        message: err.message || 'Connection failed. Please check your credentials.',
+        message: err.message || 'Connection failed. Please check your credentials.'
       })
     } finally {
       setTestingConnection(false)
@@ -88,8 +155,8 @@ export default function APIConnectionManager() {
   }
 
   const handleAddConnection = async () => {
-    if (!selectedProvider || !credentials.apiKey) {
-      setError('Please provide all required credentials')
+    if (!selectedProvider || !organization?.id || !displayName.trim()) {
+      setError('Please provide all required information')
       return
     }
 
@@ -97,35 +164,125 @@ export default function APIConnectionManager() {
     setError(null)
 
     try {
-      // TODO: Call Cloud Function to add API connection
-      console.log('Adding connection:', {
-        provider: selectedProvider,
-        credentials,
-      })
+      const providerCredentials = buildCredentialsForProvider(selectedProvider, credentials)
 
+      const addRequest: AddConnectionRequest = {
+        organizationId: organization.id,
+        provider: selectedProvider,
+        displayName: displayName.trim(),
+        credentials: providerCredentials,
+        syncFrequency: 'daily'
+      }
+
+      // Call Cloud Function
+      const addApiConnection = httpsCallable<AddConnectionRequest, any>(
+        functions,
+        'addApiConnection'
+      )
+      await addApiConnection(addRequest)
+
+      // Close modal and reset form
       setShowAddModal(false)
       setSelectedProvider(null)
-      setCredentials({ apiKey: '', organizationId: '', additionalConfig: '' })
+      setDisplayName('')
+      setCredentials({ 
+        apiKey: '', 
+        token: '',
+        organizationId: '', 
+        enterprise: '',
+        additionalConfig: '' 
+      })
       setTestResult(null)
     } catch (err: any) {
+      console.error('Add connection error:', err)
       setError(err.message || 'Failed to add connection')
     } finally {
       setLoading(false)
     }
   }
 
-  const getProviderInfo = (providerId: string) => {
+  const handleSyncConnection = async (connectionId: string) => {
+    setSyncingConnection(connectionId)
+    setError(null)
+
+    try {
+      const syncRequest: SyncConnectionRequest = {
+        connectionId
+      }
+
+      // Call Cloud Function
+      const syncApiConnection = httpsCallable<SyncConnectionRequest, SyncResult>(
+        functions,
+        'syncApiConnection'
+      )
+      const result = await syncApiConnection(syncRequest)
+
+      if (!result.data.success) {
+        throw new Error(result.data.errors.join(', '))
+      }
+
+      // Show success message (you could add a toast notification here)
+      console.log(`Synced ${result.data.recordsSynced} records successfully`)
+    } catch (err: any) {
+      console.error('Sync connection error:', err)
+      setError(err.message || 'Failed to sync connection')
+    } finally {
+      setSyncingConnection(null)
+    }
+  }
+
+  const buildCredentialsForProvider = (provider: AIProvider, creds: any) => {
+    switch (provider) {
+      case 'github_copilot':
+        return {
+          type: 'pat',
+          token: creds.token || creds.apiKey,
+          organization: creds.organizationId,
+          enterprise: creds.enterprise || undefined
+        }
+
+      case 'openai_codex':
+        return {
+          apiKey: creds.apiKey,
+          organizationId: creds.organizationId || undefined
+        }
+
+      case 'anthropic_usage':
+      case 'anthropic_code':
+      case 'claude_code':
+        return {
+          apiKey: creds.apiKey
+        }
+
+      case 'cursor':
+        return {
+          method: 'csv'
+        }
+
+      default:
+        return {
+          apiKey: creds.apiKey,
+          ...( creds.additionalConfig ? JSON.parse(creds.additionalConfig) : {})
+        }
+    }
+  }
+
+  const getProviderInfo = (providerId: AIProvider) => {
     return AVAILABLE_PROVIDERS.find((p) => p.id === providerId)
+  }
+
+  const isProviderSupported = (providerId: AIProvider) => {
+    return ['github_copilot', 'openai_codex', 'anthropic_usage', 'anthropic_code', 'claude_code'].includes(providerId)
   }
 
   return (
     <div>
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gunmetal-900 dark:text-white mb-2">
+        <h1 className="text-3xl font-bold text-neutral-900 dark:text-white mb-2">
           API Connections
         </h1>
-        <p className="text-gunmetal-600 dark:text-gray-400">
+        <p className="text-neutral-500 dark:text-gray-400">
           Connect your AI coding tools to automatically sync usage data
         </p>
       </div>
@@ -133,12 +290,13 @@ export default function APIConnectionManager() {
       {/* Active Connections */}
       {connections.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gunmetal-900 dark:text-white mb-4">
+          <h2 className="text-xl font-semibold text-neutral-900 dark:text-white mb-4">
             Active Connections
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {connections.map((connection) => {
               const provider = getProviderInfo(connection.provider)
+              const isSyncing = syncingConnection === connection.id
               return (
                 <div
                   key={connection.id}
@@ -148,39 +306,47 @@ export default function APIConnectionManager() {
                     <div className="flex items-center gap-3">
                       <div className="text-3xl">{provider?.icon}</div>
                       <div>
-                        <h3 className="font-semibold text-gunmetal-900 dark:text-white">
-                          {provider?.name}
+                        <h3 className="font-semibold text-neutral-900 dark:text-white">
+                          {connection.displayName}
                         </h3>
-                        <p className="text-xs text-gunmetal-600 dark:text-gray-400">
-                          {connection.status === 'active' ? '✓ Connected' : '⚠️ Error'}
+                        <p className="text-xs text-neutral-500 dark:text-gray-400">
+                          {connection.status === 'active' && '✓ Connected'}
+                          {connection.status === 'failed' && '⚠️ Error'}
+                          {connection.status === 'paused' && '⏸ Paused'}
                         </p>
                       </div>
                     </div>
-                    <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                      </svg>
-                    </button>
                   </div>
 
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-gunmetal-600 dark:text-gray-400">Last Sync:</span>
-                      <span className="text-gunmetal-900 dark:text-white font-medium">
-                        {connection.lastSync ? new Date(connection.lastSync).toLocaleString() : 'Never'}
+                      <span className="text-neutral-500 dark:text-gray-400">Last Sync:</span>
+                      <span className="text-neutral-900 dark:text-white font-medium">
+                        {connection.lastSyncAt 
+                          ? new Date(connection.lastSyncAt.toDate()).toLocaleString() 
+                          : 'Never'}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gunmetal-600 dark:text-gray-400">Records:</span>
-                      <span className="text-gunmetal-900 dark:text-white font-medium">
-                        {connection.recordCount || 0}
+                      <span className="text-neutral-500 dark:text-gray-400">Frequency:</span>
+                      <span className="text-neutral-900 dark:text-white font-medium capitalize">
+                        {connection.syncFrequency}
                       </span>
                     </div>
+                    {connection.lastError && (
+                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                        <p className="text-xs text-red-600 dark:text-red-400">{connection.lastError}</p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <button className="w-full px-4 py-2 bg-primary-500 text-gunmetal-900 font-medium rounded-lg hover:bg-primary-600 transition-colors">
-                      Sync Now
+                    <button 
+                      onClick={() => handleSyncConnection(connection.id)}
+                      disabled={isSyncing || connection.status === 'paused'}
+                      className="w-full px-4 py-2 bg-accent-400 text-neutral-900 font-medium rounded-lg hover:bg-accent-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSyncing ? 'Syncing...' : 'Sync Now'}
                     </button>
                   </div>
                 </div>
@@ -190,35 +356,63 @@ export default function APIConnectionManager() {
         </div>
       )}
 
+      {/* Error message */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      )}
+
       {/* Available Providers */}
       <div>
-        <h2 className="text-xl font-semibold text-gunmetal-900 dark:text-white mb-4">
+        <h2 className="text-xl font-semibold text-neutral-900 dark:text-white mb-4">
           Available Integrations
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {AVAILABLE_PROVIDERS.map((provider) => (
-            <div
-              key={provider.id}
-              className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
-            >
-              <div className="text-4xl mb-3">{provider.icon}</div>
-              <h3 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-2">
-                {provider.name}
-              </h3>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400 mb-4">
-                {provider.description}
-              </p>
-              <button
-                onClick={() => {
-                  setSelectedProvider(provider.id)
-                  setShowAddModal(true)
-                }}
-                className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          {AVAILABLE_PROVIDERS.map((provider) => {
+            const isSupported = isProviderSupported(provider.id)
+            const isAlreadyConnected = connections.some(c => c.provider === provider.id)
+
+            return (
+              <div
+                key={provider.id}
+                className={`bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 ${
+                  isSupported ? 'hover:border-accent-400 dark:hover:border-accent-400' : 'opacity-60'
+                } transition-colors`}
               >
-                Connect
-              </button>
-            </div>
-          ))}
+                <div className="text-4xl mb-3">{provider.icon}</div>
+                <h3 className="text-lg font-semibold text-neutral-900 dark:text-white mb-2">
+                  {provider.name}
+                </h3>
+                <p className="text-sm text-neutral-500 dark:text-gray-400 mb-4 min-h-[40px]">
+                  {provider.description}
+                </p>
+                {provider.documentationUrl && isSupported && (
+                  <a
+                    href={provider.documentationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-accent-400 hover:text-accent-500 mb-3 block"
+                  >
+                    📚 View Documentation →
+                  </a>
+                )}
+                <button
+                  onClick={() => {
+                    if (isSupported && !isAlreadyConnected) {
+                      setSelectedProvider(provider.id)
+                      setDisplayName(provider.name)
+                      setShowAddModal(true)
+                    }
+                  }}
+                  disabled={!isSupported || isAlreadyConnected}
+                  className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-neutral-900 dark:text-white font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAlreadyConnected ? 'Already Connected' : isSupported ? 'Connect' : 'Coming Soon'}
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -226,7 +420,7 @@ export default function APIConnectionManager() {
       {showAddModal && selectedProvider && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-4">
+            <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-4">
               Connect {getProviderInfo(selectedProvider)?.name}
             </h3>
 
@@ -245,7 +439,7 @@ export default function APIConnectionManager() {
                 }`}
               >
                 <p
-                  className={`text-sm ${
+                  className={`text-sm font-medium ${
                     testResult.success
                       ? 'text-green-600 dark:text-green-400'
                       : 'text-red-600 dark:text-red-400'
@@ -253,57 +447,99 @@ export default function APIConnectionManager() {
                 >
                   {testResult.message}
                 </p>
+                {testResult.metadata && (
+                  <div className="mt-2 text-xs text-neutral-600 dark:text-gray-400 space-y-1">
+                    {Object.entries(testResult.metadata).map(([key, value]) => (
+                      <div key={key}>
+                        <span className="font-medium">{key}:</span> {String(value)}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gunmetal-900 dark:text-white mb-2">
-                  API Key *
+                <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                  Display Name *
                 </label>
                 <input
-                  type="password"
-                  value={credentials.apiKey}
-                  onChange={(e) => setCredentials({ ...credentials, apiKey: e.target.value })}
-                  placeholder="Enter your API key"
-                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gunmetal-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g., Production API"
+                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
                 />
               </div>
 
-              {(selectedProvider === 'github_copilot' || selectedProvider === 'openai') && (
+              {selectedProvider === 'github_copilot' ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                      Personal Access Token *
+                    </label>
+                    <input
+                      type="password"
+                      value={credentials.token}
+                      onChange={(e) => setCredentials({ ...credentials, token: e.target.value })}
+                      placeholder="ghp_..."
+                      className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                      Organization Name (or Enterprise)
+                    </label>
+                    <input
+                      type="text"
+                      value={credentials.organizationId}
+                      onChange={(e) => setCredentials({ ...credentials, organizationId: e.target.value })}
+                      placeholder="your-org-name"
+                      className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                    />
+                  </div>
+                </>
+              ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gunmetal-900 dark:text-white mb-2">
-                    Organization ID
+                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                    API Key *
+                  </label>
+                  <input
+                    type="password"
+                    value={credentials.apiKey}
+                    onChange={(e) => setCredentials({ ...credentials, apiKey: e.target.value })}
+                    placeholder="Enter your API key"
+                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                  />
+                </div>
+              )}
+
+              {selectedProvider === 'openai_codex' && (
+                <div>
+                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                    Organization ID (Optional)
                   </label>
                   <input
                     type="text"
                     value={credentials.organizationId}
                     onChange={(e) => setCredentials({ ...credentials, organizationId: e.target.value })}
-                    placeholder="Enter your organization ID"
-                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gunmetal-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="org-..."
+                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
                   />
                 </div>
               )}
-
-              <div>
-                <label className="block text-sm font-medium text-gunmetal-900 dark:text-white mb-2">
-                  Additional Configuration (JSON, optional)
-                </label>
-                <textarea
-                  value={credentials.additionalConfig}
-                  onChange={(e) => setCredentials({ ...credentials, additionalConfig: e.target.value })}
-                  placeholder='{"key": "value"}'
-                  rows={3}
-                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gunmetal-900 dark:text-white placeholder:text-gray-400 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
             </div>
 
             <div className="mt-6 space-y-3">
               <button
                 onClick={handleTestConnection}
-                disabled={testingConnection || !credentials.apiKey}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={
+                  testingConnection || 
+                  (!credentials.apiKey && !credentials.token) ||
+                  (selectedProvider === 'github_copilot' && !credentials.organizationId)
+                }
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {testingConnection ? 'Testing...' : 'Test Connection'}
               </button>
@@ -313,19 +549,26 @@ export default function APIConnectionManager() {
                   onClick={() => {
                     setShowAddModal(false)
                     setSelectedProvider(null)
-                    setCredentials({ apiKey: '', organizationId: '', additionalConfig: '' })
+                    setDisplayName('')
+                    setCredentials({ 
+                      apiKey: '', 
+                      token: '',
+                      organizationId: '', 
+                      enterprise: '',
+                      additionalConfig: '' 
+                    })
                     setTestResult(null)
                     setError(null)
                   }}
                   disabled={loading}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleAddConnection}
-                  disabled={loading || !credentials.apiKey || !testResult?.success}
-                  className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={loading || !testResult?.success || !displayName.trim()}
+                  className="flex-1 px-4 py-2 bg-accent-400 text-neutral-900 font-semibold rounded-lg hover:bg-accent-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Adding...' : 'Add Connection'}
                 </button>
@@ -337,4 +580,3 @@ export default function APIConnectionManager() {
     </div>
   )
 }
-

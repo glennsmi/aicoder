@@ -7,12 +7,10 @@ import { useUserUsageData } from '../hooks/useUserUsageData'
 import CSVImport from '@/components/CSVImport'
 import CursorUsageChart from '@/components/CursorUsageChart'
 import AuthModal from '@/components/AuthModal'
-import AccountSettingsModal from '@/components/AccountSettingsModal'
 import CurrencySelector from '@/components/CurrencySelector'
 import ConfirmationModal from '@/components/ConfirmationModal'
-import ThemeToggle from '@/components/ThemeToggle'
 import AdminPage from './AdminPage'
-import AboutPage from './AboutPage'
+import AboutModal from '@/components/AboutModal'
 import { useCurrency } from '../hooks/useCurrency'
 import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
 
@@ -25,8 +23,6 @@ export default function CursorCostsPage() {
   const { 
     loading, 
     error, 
-    stats,
-    deduplicateData,
     clearError 
   } = useUserUsageData()
   const {  userCurrency, loading: currencyLoading } = useCurrency()
@@ -43,10 +39,10 @@ export default function CursorCostsPage() {
     errors: string[]
   } | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
-  const [showAccountSettings, setShowAccountSettings] = useState(false)
+  const [authMode] = useState<'login' | 'signup'>('login')
   const [showCurrencySelector, setShowCurrencySelector] = useState(false)
-  const [currentPage, setCurrentPage] = useState<'main' | 'admin' | 'about'>('main')
+  const [currentPage, setCurrentPage] = useState<'main' | 'admin'>('main')
+  const [showAboutModal, setShowAboutModal] = useState(false)
 
   const [tempDataV2, setTempDataV2] = useState<CursorUsageV2[]>([])
 
@@ -118,10 +114,10 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
     setShowConfirmModal(true)
   }
 
-  const openAuthModal = (mode: 'login' | 'signup') => {
-    setAuthMode(mode)
-    setShowAuthModal(true)
-  }
+  // Removed - navigate to /login instead
+  // const openAuthModal = (_mode: 'login' | 'signup') => {
+  //   // Navigate to login page instead
+  // }
 
   // CSV Download Functions
   /*
@@ -184,42 +180,29 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
     return <AdminPage onBackToMain={() => setCurrentPage('main')} />
   }
 
-  // Render about page if selected
-  if (currentPage === 'about') {
-    return <AboutPage onBackToMain={() => setCurrentPage('main')} />
-  }
+  // About modal is now rendered at the bottom of the component
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 text-gunmetal dark:text-gray-100 transition-colors duration-200">
+    <div className="min-h-screen bg-gray-50 dark:bg-secondary-800 text-neutral-900 dark:text-gray-100 transition-colors duration-200">
       {/* Hero Section */}
-      <div className="bg-secondary-800 dark:bg-gray-800 p-4 transition-colors duration-200">
+      <div className="bg-gray-50 dark:bg-secondary-800 p-4 transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
           <div className="text-center">
             <div className="flex items-center justify-center mb-2 -mt-4">
               <div className="flex flex-row items-center justify-between w-full">
-                <div className="flex flex-row items-top">
-                  {/* Fueld Logo Symbol - conditional based on theme */}
-                  {actualTheme === 'dark' ? (
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mr-4 shadow-lg">
-                      <img src="/logos/Logo-midnight-greeen.svg" alt="Fueld" className="w-16 h-16" />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mr-4 shadow-lg">
-                      <img src="/logos/fueld-logo-symbol.svg" alt="Fueld" className="w-10 h-10" />
-                    </div>
-                  )}
-                  <div className="text-left">
-                    <h1 className="text-3xl font-bold text-white">Cursor Costs Tracker</h1>
-                    <p className="text-sm text-white/70 mt-1">
-                      by <a href="https://go.fueld.ai/4kkKxYj" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Fueld AI</a>
-                    </p>
-                  </div>
+                <div className="flex flex-row items-center">
+                  {/* AICoder.Guru Logo - conditional based on theme */}
+                  <img 
+                    src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+                    alt="AICoder.Guru - Measure. Motivate. Master AI."
+                    className="h-12 transition-opacity hover:opacity-90"
+                  />
                 </div>
 
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-20 max-w-3xl mx-auto">
-              <p className="text-xl text-white/90 text-center sm:text-left">
+              <p className="text-xl text-neutral-900 dark:text-white/90 text-center sm:text-left">
                 Professional cost tracking for Cursor AI usage with smart data aggregation and analytics
               </p>
               
@@ -312,7 +295,7 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
                 <img src="/logos/fueld-logo-symbol.svg" alt="Fueld" className="w-6 h-6 mr-3 animate-pulse" />
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500 mr-2"></div>
               </div>
-              <span className="text-gunmetal-900 dark:text-gray-200">
+              <span className="text-neutral-900 dark:text-gray-200">
                 {currentUser ? 'Saving to your account...' : 'Processing...'}
               </span>
             </div>
@@ -346,105 +329,9 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
 
       
 
-        {/* Enhanced Fueld Branding Footer */}
-        <div className="mt-12 text-center">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-8 max-w-4xl mx-auto transition-colors duration-200">
-            {/* Customer Testimonials */}
-            <div className="mb-8">
-              <h3 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-6">What Our Customers Say about Fueld AI</h3>
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Quote 1 */}
-                <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-6 border border-primary-200 dark:border-primary-800 transition-colors duration-200">
-                  <div className="flex items-start space-x-2 mb-3">
-                    <svg className="w-6 h-6 text-primary-500 dark:text-primary-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h4v10h-10z"/>
-                    </svg>
-                    <div className="flex-1">
-                      <p className="text-gunmetal-900 dark:text-gray-200 font-medium text-lg leading-relaxed mb-3">
-                        "Amazing, Love the magic you are selling"
-                      </p>
-                      <div className="text-right">
-                        <p className="text-gunmetal-700 dark:text-gray-300 font-semibold">Stuart Crooks</p>
-                        <p className="text-gunmetal-500 dark:text-gray-400 text-sm">Fintech Exec</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+    
 
-                {/* Quote 2 */}
-                <div className="bg-secondary-50 dark:bg-secondary-900/20 rounded-xl p-6 border border-secondary-200 dark:border-secondary-800 transition-colors duration-200">
-                  <div className="flex items-start space-x-2 mb-3">
-                    <svg className="w-6 h-6 text-secondary-600 dark:text-secondary-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h4v10h-10z"/>
-                    </svg>
-                    <div className="flex-1">
-                      <p className="text-gunmetal-900 dark:text-gray-200 font-medium text-lg leading-relaxed mb-3">
-                        "That's just astonishing"
-                      </p>
-                      <div className="text-right">
-                        <p className="text-gunmetal-700 dark:text-gray-300 font-semibold">James Mayes</p>
-                        <p className="text-gunmetal-500 dark:text-gray-400 text-sm">Startup founder & CEO</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Fueld Logo and Info */}
-            <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
-              <div className="flex items-center justify-center mb-4">
-                <img src={actualTheme === 'dark' ? '/logos/fueld_logo_white.svg' : '/logos/fueld-logo-full.svg'} alt="Fueld" className="h-8" />
-              </div>
-              
-              <p className="text-sm text-gunmetal-700 dark:text-gray-300 mb-4">
-                AI powered nutrition tracking, recipe generation and analytics platform
-              </p>
-
-              <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-4 mb-6 mt-4">
-                <div className="flex items-center justify-center gap-4 text-sm">
-                  <a 
-                    href="https://go.fueld.ai/4kkKxYj" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-secondary-800 hover:text-primary-500 dark:text-gray-300 dark:hover:text-primary-400 font-medium transition-colors"
-                  >
-                    Visit Fueld.ai
-                  </a>
-                  <span className="w-1 h-1 bg-gunmetal-300 dark:bg-gray-500 rounded-full"></span>
-                  <a 
-                    href="http://localhost:5176/forindividuals?promoCode=Cursor1MFree" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-secondary-800 hover:text-primary-500 dark:text-gray-300 dark:hover:text-primary-400 font-medium transition-colors"
-                  >
-                    Get the App
-                  </a>
-                  <span className="w-1 h-1 bg-gunmetal-300 dark:bg-gray-500 rounded-full"></span>
-                  <button 
-                    onClick={() => setCurrentPage('about')}
-                    className="text-secondary-800 hover:text-primary-500 dark:text-gray-300 dark:hover:text-primary-400 font-medium transition-colors"
-                  >
-                    About
-                  </button>
-                  <span className="w-1 h-1 bg-gunmetal-300 dark:bg-gray-500 rounded-full"></span>
-                  <a
-                    href="http://localhost:5176/forindividuals?promoCode=Cursor1MFree"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-[#F75C03] hover:bg-[#F75C03]/80 text-white font-semibold px-4 py-1.5 rounded-md transition-colors"
-                  >
-                    1 Month Free
-                  </a>
-                </div>
-
-                <div className="flex flex-row items-center">
-                  <ThemeToggle />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Auth Modal */}
@@ -454,13 +341,7 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
         initialMode={authMode}
       />
 
-      {/* Account Settings Modal */}
-                <AccountSettingsModal 
-            isOpen={showAccountSettings} 
-            onClose={() => setShowAccountSettings(false)}
-            stats={stats}
-            onDeduplicate={deduplicateData}
-          />
+      {/* Account Settings Modal - Removed */}
 
       {/* Currency Selector */}
       <CurrencySelector
@@ -476,6 +357,12 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
         message={confirmModalProps.message}
         onConfirm={confirmModalProps.onConfirm}
         confirmText={confirmModalProps.confirmText}
+      />
+
+      {/* About Modal */}
+      <AboutModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
       />
     </div>
   </div>

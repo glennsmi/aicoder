@@ -1,244 +1,171 @@
-import { BaseConnector, UsageRecord, SyncResult, TestConnectionResult, ConnectorCredentials } from './BaseConnector'
-import { getFirestore, Timestamp } from 'firebase-admin/firestore'
+import { BaseConnector } from './BaseConnector'
+import {
+  UsageData,
+  TestConnectionResult,
+  GitHubCopilotCredentials,
+  AIProvider
+} from '../shared'
+import axios, { AxiosInstance } from 'axios'
 
 /**
  * GitHub Copilot API Connector
- * 
- * Uses GitHub Enterprise API to fetch Copilot usage data
- * API Documentation: https://docs.github.com/en/rest/copilot/copilot-usage
+ * Docs: https://docs.github.com/en/rest/copilot
  */
 export class GitHubCopilotConnector extends BaseConnector {
-  private apiEndpoint = 'https://api.github.com'
+  private api: AxiosInstance
+  private creds: GitHubCopilotCredentials
 
-  constructor(credentials: ConnectorCredentials) {
-    super('github_copilot', credentials)
+  // Copilot pricing (as of 2025)
+  private static readonly PRICING = {
+    individual: 10, // $10/month per user
+    business: 19,   // $19/month per user
+    currency: 'USD'
+  }
+
+  constructor(credentials: GitHubCopilotCredentials) {
+    super('github_copilot' as AIProvider, credentials)
+    this.creds = credentials
+
+    // Initialize axios instance with auth
+    this.api = axios.create({
+      baseURL: 'https://api.github.com',
+      headers: {
+        'Authorization': `Bearer ${this.creds.token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    })
   }
 
   async testConnection(): Promise<TestConnectionResult> {
-    this.validateCredentials()
-
-    if (!this.credentials.organizationId) {
-      return {
-        success: false,
-        message: 'GitHub organization ID is required',
-      }
-    }
-
     try {
-      const response = await fetch(`${this.apiEndpoint}/orgs/${this.credentials.organizationId}`, {
-        headers: {
-          'Authorization': `Bearer ${this.credentials.apiKey}`,
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      })
+      // Test by fetching seat information
+      const endpoint = this.creds.enterprise
+        ? `/enterprises/${this.creds.enterprise}/copilot/billing`
+        : `/orgs/${this.creds.organization}/copilot/billing`
 
-      if (!response.ok) {
-        const error = await response.json()
-        return {
-          success: false,
-          message: `GitHub API error: ${error.message || response.statusText}`,
-        }
-      }
-
-      const orgData = await response.json()
+      const response = await this.api.get(endpoint)
 
       return {
         success: true,
-        message: 'Connection successful',
+        message: 'Successfully connected to GitHub Copilot API',
         metadata: {
-          organization: orgData.login,
-          name: orgData.name,
-        },
+          organizationName: this.creds.organization || this.creds.enterprise,
+          totalSeats: response.data.seat_breakdown?.total || 0,
+          activeSeats: response.data.seat_breakdown?.active_this_cycle || 0,
+          plan: this.creds.enterprise ? 'enterprise' : 'business'
+        }
       }
-    } catch (error: any) {
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        return {
+          success: false,
+          message: `GitHub API Error: ${error.response?.data?.message || error.message}`
+        }
+      }
       return {
         success: false,
-        message: error.message || 'Connection failed',
+        message: `Connection failed: ${error instanceof Error ? error.message : String(error)}`
       }
     }
   }
 
-  async fetchUsage(startDate: Date, endDate: Date): Promise<UsageRecord[]> {
-    this.validateCredentials()
-
-    if (!this.credentials.organizationId) {
-      throw new Error('GitHub organization ID is required')
-    }
-
+  async fetchUsage(startDate: string, endDate: string): Promise<UsageData[]> {
     try {
-      // Fetch Copilot usage for the organization
-      // Note: GitHub's API returns usage aggregated by day and by user
-      const response = await fetch(
-        `${this.apiEndpoint}/orgs/${this.credentials.organizationId}/copilot/usage`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.credentials.apiKey}`,
-            'Accept': 'application/vnd.github+json',
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
+      const usageData: UsageData[] = []
+
+      // Determine endpoint based on org/enterprise
+      const baseEndpoint = this.creds.enterprise
+        ? `/enterprises/${this.creds.enterprise}/copilot`
+        : `/orgs/${this.creds.organization}/copilot`
+
+      // Fetch usage metrics
+      const usageResponse = await this.api.get(`${baseEndpoint}/usage`, {
+        params: {
+          since: startDate,
+          until: endDate,
+          per_page: 100
         }
-      )
+      })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(`GitHub API error: ${error.message || response.statusText}`)
-      }
+      // Fetch seat information for cost calculation
+      const billingResponse = await this.api.get(`${baseEndpoint}/billing`)
+      const activeSeats = billingResponse.data.seat_breakdown?.active_this_cycle || 0
 
-      const data = await response.json()
-      return this.transformGitHubData(data, startDate, endDate)
-    } catch (error: any) {
-      console.error('Error fetching GitHub Copilot usage:', error)
-      throw new Error(`Failed to fetch GitHub Copilot usage: ${error.message}`)
-    }
-  }
+      // GitHub Copilot usage data structure
+      const usage = usageResponse.data
 
-  async sync(organizationId: string, startDate: Date, endDate: Date): Promise<SyncResult> {
-    const db = getFirestore()
-    const errors: string[] = []
-    let recordsProcessed = 0
-    let recordsSaved = 0
+      if (usage && Array.isArray(usage)) {
+        for (const dayData of usage) {
+          const date = dayData.day
+          const breakdown = dayData.breakdown || []
 
-    try {
-      const usageRecords = await this.fetchUsage(startDate, endDate)
-      recordsProcessed = usageRecords.length
+          // Calculate daily cost (pro-rated monthly cost)
+          const dailyCost = (activeSeats * GitHubCopilotConnector.PRICING.business) / 30
 
-      // Save each record to Firestore
-      for (const record of usageRecords) {
-        try {
-          // Find or create user based on GitHub username
-          const userId = record.userId || 'unknown'
+          // Aggregate data for the day
+          const totalSuggestions = breakdown.reduce((sum: number, item: any) => 
+            sum + (item.suggestions_count || 0), 0)
+          const totalAcceptances = breakdown.reduce((sum: number, item: any) => 
+            sum + (item.acceptances_count || 0), 0)
+          const totalActiveUsers = breakdown.reduce((sum: number, item: any) => 
+            sum + (item.active_users?.length || 0), 0)
 
-          // Save to user's usage collection
-          const usageRef = db
-            .collection('users')
-            .doc(userId)
-            .collection('enhanced_cursor_usage')
-            .doc()
-
-          await usageRef.set({
-            date: Timestamp.fromDate(record.date),
-            model: record.model || 'github-copilot',
-            inputTokens: record.inputTokens,
-            outputTokens: record.outputTokens,
-            totalTokens: record.totalTokens,
-            cost: record.cost,
-            requests: record.requests,
-            source: 'github_copilot_api',
-            syncedAt: Timestamp.now(),
-            metadata: record.metadata || {},
+          // Create usage record for the day
+          usageData.push({
+            date,
+            model: 'github-copilot',
+            provider: 'github_copilot',
+            inputTokens: 0, // GitHub doesn't provide token counts
+            outputTokens: 0,
+            totalTokens: 0,
+            requests: totalSuggestions,
+            cost: dailyCost,
+            currency: GitHubCopilotConnector.PRICING.currency,
+            metadata: {
+              suggestions: totalSuggestions,
+              acceptances: totalAcceptances,
+              activeUsers: totalActiveUsers,
+              acceptanceRate: totalSuggestions > 0 
+                ? (totalAcceptances / totalSuggestions * 100).toFixed(2) 
+                : '0',
+              activeSeats
+            }
           })
 
-          recordsSaved++
-        } catch (error: any) {
-          errors.push(`Failed to save record for user ${record.userId}: ${error.message}`)
+          // Also create per-user records if available
+          for (const item of breakdown) {
+            if (item.active_users && Array.isArray(item.active_users)) {
+              for (const user of item.active_users) {
+                usageData.push({
+                  date,
+                  userId: user.login,
+                  userName: user.login,
+                  model: 'github-copilot',
+                  provider: 'github_copilot',
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  totalTokens: 0,
+                  requests: 0, // Per-user suggestions not provided
+                  cost: GitHubCopilotConnector.PRICING.business / 30, // Daily pro-rated cost per user
+                  currency: GitHubCopilotConnector.PRICING.currency,
+                  metadata: {
+                    language: item.language,
+                    editor: item.editor
+                  }
+                })
+              }
+            }
+          }
         }
       }
 
-      // Update the API connection's last sync timestamp
-      await db
-        .collection('organizations')
-        .doc(organizationId)
-        .collection('apiConnections')
-        .where('provider', '==', 'github_copilot')
-        .limit(1)
-        .get()
-        .then(async (snapshot) => {
-          if (!snapshot.empty) {
-            const connectionDoc = snapshot.docs[0]
-            await connectionDoc.ref.update({
-              lastSync: Timestamp.now(),
-              lastSyncStatus: errors.length > 0 ? 'partial' : 'success',
-              recordCount: recordsSaved,
-            })
-          }
-        })
-
-      return {
-        success: errors.length === 0,
-        recordsProcessed,
-        recordsSaved,
-        errors,
-        lastSyncDate: new Date(),
+      return usageData
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(`GitHub API Error: ${error.response?.data?.message || error.message}`)
       }
-    } catch (error: any) {
-      console.error('Error syncing GitHub Copilot data:', error)
-      return {
-        success: false,
-        recordsProcessed,
-        recordsSaved,
-        errors: [...errors, error.message],
-        lastSyncDate: new Date(),
-      }
+      throw error
     }
-  }
-
-  /**
-   * Transform GitHub Copilot API response to our standard format
-   * 
-   * GitHub's response structure (example):
-   * [
-   *   {
-   *     "day": "2024-01-01",
-   *     "total_suggestions_count": 100,
-   *     "total_acceptances_count": 50,
-   *     "total_lines_suggested": 500,
-   *     "total_lines_accepted": 250,
-   *     "total_active_users": 10,
-   *     "breakdown": [
-   *       {
-   *         "language": "python",
-   *         "editor": "vscode",
-   *         "suggestions_count": 50,
-   *         "acceptances_count": 25
-   *       }
-   *     ]
-   *   }
-   * ]
-   */
-  private transformGitHubData(data: any, startDate: Date, endDate: Date): UsageRecord[] {
-    const records: UsageRecord[] = []
-
-    if (!Array.isArray(data)) {
-      return records
-    }
-
-    for (const dayData of data) {
-      const recordDate = new Date(dayData.day)
-      
-      // Filter by date range
-      if (recordDate < startDate || recordDate > endDate) {
-        continue
-      }
-
-      // GitHub doesn't provide detailed token counts, so we'll estimate based on suggestions
-      // Average tokens per suggestion: ~50 (rough estimate)
-      const estimatedTokens = dayData.total_suggestions_count * 50
-      
-      // Copilot pricing is typically $10/user/month or $19/user/month for business
-      // Estimate daily cost per user
-      const costPerUser = 10 / 30 // ~$0.33 per user per day
-      const estimatedCost = dayData.total_active_users * costPerUser
-
-      records.push({
-        date: recordDate,
-        model: 'github-copilot',
-        inputTokens: Math.floor(estimatedTokens * 0.3), // Estimate 30% input
-        outputTokens: Math.floor(estimatedTokens * 0.7), // Estimate 70% output
-        totalTokens: estimatedTokens,
-        cost: estimatedCost,
-        requests: dayData.total_suggestions_count,
-        metadata: {
-          acceptances: dayData.total_acceptances_count,
-          lines_suggested: dayData.total_lines_suggested,
-          lines_accepted: dayData.total_lines_accepted,
-          active_users: dayData.total_active_users,
-          breakdown: dayData.breakdown,
-        },
-      })
-    }
-
-    return records
   }
 }
-

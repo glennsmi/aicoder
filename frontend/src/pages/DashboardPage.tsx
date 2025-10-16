@@ -24,10 +24,10 @@ export default function DashboardPage() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gunmetal-900 dark:text-white">
+        <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">
           Organization Dashboard
         </h1>
-        <p className="text-gunmetal-600 dark:text-gray-400 mt-2">
+        <p className="text-neutral-500 dark:text-gray-400 mt-2">
           Overview of {organization?.name || 'your organization'}
         </p>
       </div>
@@ -37,8 +37,8 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Members</p>
-              <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
+              <p className="text-sm text-neutral-500 dark:text-gray-400">Total Members</p>
+              <p className="text-3xl font-bold text-neutral-900 dark:text-white mt-1">
                 {members.length}
               </p>
               <p className="text-xs text-green-600 dark:text-green-400 mt-1">
@@ -56,11 +56,11 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Tokens</p>
-              <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
+              <p className="text-sm text-neutral-500 dark:text-gray-400">Total Tokens</p>
+              <p className="text-3xl font-bold text-neutral-900 dark:text-white mt-1">
                 {formatNumber(analytics.totalTokens)}
               </p>
-              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
+              <p className="text-xs text-neutral-500 dark:text-gray-500 mt-1">
                 {analytics.totalRequests} requests
               </p>
             </div>
@@ -75,11 +75,11 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Total Cost</p>
-              <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
+              <p className="text-sm text-neutral-500 dark:text-gray-400">Total Cost</p>
+              <p className="text-3xl font-bold text-neutral-900 dark:text-white mt-1">
                 {formatCurrency(analytics.totalCost)}
               </p>
-              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
+              <p className="text-xs text-neutral-500 dark:text-gray-500 mt-1">
                 All time
               </p>
             </div>
@@ -94,11 +94,11 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gunmetal-600 dark:text-gray-400">Avg per User</p>
-              <p className="text-3xl font-bold text-gunmetal-900 dark:text-white mt-1">
+              <p className="text-sm text-neutral-500 dark:text-gray-400">Avg per User</p>
+              <p className="text-3xl font-bold text-neutral-900 dark:text-white mt-1">
                 {formatCurrency(analytics.activeUsers > 0 ? analytics.totalCost / analytics.activeUsers : 0)}
               </p>
-              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
+              <p className="text-xs text-neutral-500 dark:text-gray-500 mt-1">
                 per active user
               </p>
             </div>
@@ -114,7 +114,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Top Users */}
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">
             Top Users by Cost
           </h2>
           {analytics.userStats.length > 0 ? (
@@ -122,23 +122,23 @@ export default function DashboardPage() {
               {analytics.userStats.slice(0, 5).map((userStat) => (
                 <div key={userStat.userId} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-primary-500 rounded-full flex items-center justify-center text-gunmetal-900 font-semibold text-sm">
+                    <div className="w-10 h-10 bg-primary-500 rounded-full flex items-center justify-center text-neutral-900 font-semibold text-sm">
                       {userStat.email[0].toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gunmetal-900 dark:text-white">
+                      <p className="text-sm font-medium text-neutral-900 dark:text-white">
                         {userStat.displayName}
                       </p>
-                      <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                      <p className="text-xs text-neutral-500 dark:text-gray-400">
                         {userStat.email}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-gunmetal-900 dark:text-white">
+                    <p className="text-sm font-semibold text-neutral-900 dark:text-white">
                       {formatCurrency(userStat.totalCost)}
                     </p>
-                    <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                    <p className="text-xs text-neutral-500 dark:text-gray-400">
                       {formatNumber(userStat.totalTokens)} tokens
                     </p>
                   </div>
@@ -154,7 +154,7 @@ export default function DashboardPage() {
 
         {/* Model Usage */}
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">
             Usage by Model
           </h2>
           {analytics.modelStats.length > 0 ? (
@@ -162,10 +162,10 @@ export default function DashboardPage() {
               {analytics.modelStats.map((modelStat) => (
                 <div key={modelStat.model}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gunmetal-900 dark:text-white">
+                    <span className="text-sm font-medium text-neutral-900 dark:text-white">
                       {modelStat.model}
                     </span>
-                    <span className="text-sm font-semibold text-gunmetal-900 dark:text-white">
+                    <span className="text-sm font-semibold text-neutral-900 dark:text-white">
                       {formatCurrency(modelStat.totalCost)}
                     </span>
                   </div>
@@ -175,7 +175,7 @@ export default function DashboardPage() {
                       style={{ width: `${modelStat.percentage}%` }}
                     ></div>
                   </div>
-                  <p className="text-xs text-gunmetal-600 dark:text-gray-400 mt-1">
+                  <p className="text-xs text-neutral-500 dark:text-gray-400 mt-1">
                     {modelStat.percentage.toFixed(1)}% of total cost
                   </p>
                 </div>
@@ -192,23 +192,23 @@ export default function DashboardPage() {
       {/* Team Stats if available */}
       {analytics.teamStats.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-white mb-4">
             Team Performance
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {analytics.teamStats.map((teamStat) => (
               <div key={teamStat.teamId} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                <h3 className="font-semibold text-gunmetal-900 dark:text-white mb-2">
+                <h3 className="font-semibold text-neutral-900 dark:text-white mb-2">
                   {teamStat.teamName}
                 </h3>
                 <div className="space-y-1 text-sm">
-                  <p className="text-gunmetal-600 dark:text-gray-400">
+                  <p className="text-neutral-500 dark:text-gray-400">
                     {teamStat.memberCount} members
                   </p>
-                  <p className="text-gunmetal-900 dark:text-white font-semibold">
+                  <p className="text-neutral-900 dark:text-white font-semibold">
                     {formatCurrency(teamStat.totalCost)}
                   </p>
-                  <p className="text-gunmetal-600 dark:text-gray-400">
+                  <p className="text-neutral-500 dark:text-gray-400">
                     {formatNumber(teamStat.totalTokens)} tokens
                   </p>
                 </div>

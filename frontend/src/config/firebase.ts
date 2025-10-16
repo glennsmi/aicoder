@@ -1,5 +1,10 @@
 // Firebase configuration from environment variables
 // Copy frontend/.env.example to frontend/.env.local and fill in your Firebase credentials
+
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+
 // Get these from: https://console.firebase.google.com/project/YOUR_PROJECT/settings/general
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -10,6 +15,10 @@ export const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
+
+export const app = initializeApp(firebaseConfig)
+export const auth = getAuth(app)
+export const db = getFirestore(app)
 
 // Firebase emulator configuration for local development
 export const useEmulator = process.env.NODE_ENV === 'development'

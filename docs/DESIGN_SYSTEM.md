@@ -1,9 +1,41 @@
 # AICoder.Guru Design System & Brand Guidelines
 
-**Version:** 2.0  
+**Version:** 2.1  
 **Last Updated:** October 15, 2025  
 **Brand:** AICoder.Guru - AI Coding Analytics Platform  
 **Tagline:** "Measure. Motivate. Master AI."
+
+## 🎯 App UI Theme (Updated)
+
+### Sidebar (Navigation)
+The sidebar maintains a **consistent dark midnight green theme** in both light and dark modes for a professional, focused appearance:
+
+**Colors:**
+- Background: `secondary-900` (#08242c) - Dark midnight green
+- Borders: `secondary-700` (#0d3844)
+- Text: `white` / `white/80` for inactive items
+- Active item background: `accent-400` (#64BFA4) - Jade green
+- Active item text: `neutral-900` (#0F1A1C) - Dark text
+- Hover: `secondary-800` (#0a2e38)
+
+**User Menu Dropdown:**
+- Background: `secondary-950` (#051a20) - Darkest midnight
+- Border: `accent-400` (#64BFA4) - 2px jade green border
+- Text: White throughout
+- Logout button: `text-red-400` with `hover:bg-red-900/20`
+
+### Main Content Area
+**Light Mode:**
+- Background: `gray-50` (#F8FAFA)
+- Cards: `white` with `border-gray-200`
+- Text: `neutral-900` (#0F1A1C)
+- Secondary text: `neutral-500` (#6B7D82)
+
+**Dark Mode:**
+- Background: `gray-900` (#0F1A1C)
+- Cards: `gray-800` with `border-gray-700`
+- Text: `white`
+- Secondary text: `gray-400`
 
 ---
 
