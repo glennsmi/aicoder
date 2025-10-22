@@ -2,7 +2,14 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import TeamManagementPanel from '../components/TeamManagementPanel'
 
 export default function TeamsPage() {
-  const { organization, loading } = useOrganization()
+  const { organization, loading, refreshTeams } = useOrganization()
+
+  const handleTeamCreated = () => {
+    // Refresh teams data after creation
+    if (refreshTeams) {
+      refreshTeams()
+    }
+  }
 
   if (loading) {
     return (
@@ -26,7 +33,7 @@ export default function TeamsPage() {
 
   return (
     <div className="p-8">
-      <TeamManagementPanel />
+      <TeamManagementPanel onTeamCreated={handleTeamCreated} />
     </div>
   )
 }

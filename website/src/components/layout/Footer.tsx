@@ -42,7 +42,7 @@ export default function Footer() {
               </li>
               <li>
                 <a 
-                  href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'} 
+                  href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
                   className="text-sm hover:text-accent-400 transition-colors"
                 >
                   Start Free Trial
@@ -50,7 +50,7 @@ export default function Footer() {
               </li>
               <li>
                 <a 
-                  href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'} 
+                  href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
                   className="text-sm hover:text-accent-400 transition-colors"
                 >
                   Sign In

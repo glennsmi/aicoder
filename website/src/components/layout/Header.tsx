@@ -68,13 +68,13 @@ export default function Header() {
             ) : (
               <>
                 <a
-                  href="#signup"
+                  href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
                   className="hidden md:inline-flex text-neutral-700 dark:text-sand-300 hover:text-accent-500 dark:hover:text-accent-400 font-medium transition-colors"
                 >
                   Sign In
                 </a>
                     <a
-                      href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
+                      href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
                       className="px-4 py-2 bg-accent-400 text-secondary-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
                     >
                       Start Free
@@ -117,7 +117,7 @@ export default function Header() {
               ))}
               {!currentUser && (
                 <a
-                  href="#signup"
+                  href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className="text-neutral-700 dark:text-sand-300 hover:text-primary-500 dark:hover:text-primary-400 font-medium transition-colors px-2"
                 >

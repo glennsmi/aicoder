@@ -5,7 +5,7 @@ export * from './types/usage';
 export * from './types/organization';
 export * from './types/team';
 export * from './types/billing';
-export * from './types/apiConnector';
+// export * from './types/apiConnector'; // Commented out - use apiConnections instead
 export * from './types/apiConnections';
 export * from './types/invitation';
 

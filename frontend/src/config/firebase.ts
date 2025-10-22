@@ -20,20 +20,5 @@ export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 
-// Firebase emulator configuration for local development
-export const useEmulator = process.env.NODE_ENV === 'development'
-
-export const emulatorConfig = {
-  auth: {
-    host: 'localhost',
-    port: 9099
-  },
-  firestore: {
-    host: 'localhost',
-    port: 8080
-  },
-  functions: {
-    host: 'localhost',
-    port: 5001
-  }
-} 
+// Using live Firebase services (no emulators)
+export const useEmulator = false 

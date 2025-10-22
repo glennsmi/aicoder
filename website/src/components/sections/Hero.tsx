@@ -81,7 +81,7 @@ export default function Hero() {
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4">
               <a
-                href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
+                href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
                 className="inline-flex items-center justify-center px-8 py-4 bg-accent-400 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
               >
                 Start Free Trial

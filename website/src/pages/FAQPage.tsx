@@ -182,7 +182,7 @@ export default function FAQPage() {
               Email Support
             </a>
             <a
-              href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
+              href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
               className="inline-flex items-center justify-center px-6 py-3 bg-sand-100 dark:bg-secondary-700 border-2 border-neutral-200 dark:border-neutral-600 text-neutral-900 dark:text-white font-semibold rounded-lg hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
             >
               Start Free Trial

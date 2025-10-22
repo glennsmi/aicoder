@@ -1,6 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
-import { Team } from '../../../shared/src/types/team'
+import { Team } from '../shared/types/team'
 
 export const createTeam = onCall(
   { region: 'europe-west2' },

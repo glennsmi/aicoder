@@ -13,7 +13,7 @@ export default function PricingPage() {
           
           {/* Get Started Free CTA */}
           <a
-            href={import.meta.env.VITE_APP_URL || 'http://localhost:5173'}
+            href={`${import.meta.env.VITE_APP_URL || 'http://localhost:5173'}/login`}
             className="inline-flex items-center px-8 py-4 bg-accent-400 text-secondary-900 text-lg font-semibold rounded-lg hover:bg-accent-500 transition-all duration-200 shadow-lg hover:shadow-xl"
           >
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

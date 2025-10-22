@@ -19,16 +19,18 @@ npm install
 
 2. Create `.env.local` file:
 ```bash
-# Copy from main app's frontend/.env.local
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=aicoder-guru.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=aicoder-guru
-VITE_FIREBASE_STORAGE_BUCKET=aicoder-guru.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-VITE_FIREBASE_MEASUREMENT_ID=...
+# Copy .env.example to .env.local
+cp .env.example .env.local
+
+# Edit .env.local with your values:
+# For local development:
 VITE_APP_URL=http://localhost:5173
+
+# For production:
+# VITE_APP_URL=https://app.aicoder.guru
 ```
+
+**Note:** The `VITE_APP_URL` should point to where your main frontend app is running. In local development, this is typically `http://localhost:5173`. In production, it should be `https://app.aicoder.guru`.
 
 3. Run development server:
 ```bash

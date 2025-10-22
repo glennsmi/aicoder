@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
-// import { useAuth } from '../contexts/AuthContext' // unused for now
-// import { Team } from '@shared' // unused for now
+import { useAuth } from '../contexts/AuthContext'
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { db } from '../config/firebase'
 
 interface TeamManagementPanelProps {
   onTeamCreated?: () => void
 }
 
 export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPanelProps) {
-  const { teams, members, canManageTeams } = useOrganization()
-  // const { user } = useAuth() // unused for now
+  const { teams, members, canManageTeams, organization } = useOrganization()
+  const { user, currentUser, loading: authLoading } = useAuth()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDescription, setNewTeamDescription] = useState('')
@@ -17,9 +18,41 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Debug authentication state
+  console.log('TeamManagementPanel auth state:', {
+    user: user?.id,
+    userEmail: user?.email,
+    currentUser: currentUser?.uid,
+    currentUserEmail: currentUser?.email,
+    authLoading,
+    organization: organization?.id
+  })
+
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) {
       setError('Please enter a team name')
+      return
+    }
+
+    if (!organization?.id) {
+      setError('No organization found')
+      return
+    }
+
+    // Debug authentication state
+    console.log('Auth state:', { 
+      currentUser: user?.id, 
+      userEmail: user?.email,
+      organizationId: organization?.id 
+    })
+
+    if (authLoading) {
+      setError('Authentication is still loading, please wait...')
+      return
+    }
+
+    if (!user?.id) {
+      setError('User not authenticated - please refresh the page and try again')
       return
     }
 
@@ -27,23 +60,35 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
     setError(null)
 
     try {
-      // TODO: Call Cloud Function to create team
-      console.log('Creating team:', {
-        name: newTeamName,
-        description: newTeamDescription,
-        managerId: selectedManagerId,
-      })
+      // Create team document directly in Firestore
+      const teamsRef = collection(db, 'organizations', organization.id, 'teams')
+      
+      const teamData = {
+        organizationId: organization.id,
+        name: newTeamName.trim(),
+        description: newTeamDescription.trim() || '',
+        managerId: selectedManagerId || user.id,
+        memberIds: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }
 
-      // For now, just close the modal and reset
+      const docRef = await addDoc(teamsRef, teamData)
+      
+      console.log('Team created successfully with ID:', docRef.id)
+
+      // Close modal and reset form
       setShowCreateModal(false)
       setNewTeamName('')
       setNewTeamDescription('')
       setSelectedManagerId('')
       
+      // Notify parent component to refresh teams
       if (onTeamCreated) {
         onTeamCreated()
       }
     } catch (err: any) {
+      console.error('Error creating team:', err)
       setError(err.message || 'Failed to create team')
     } finally {
       setLoading(false)
