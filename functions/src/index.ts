@@ -27,23 +27,23 @@ export const debugUserCreation = onRequest(async (request, response) => {
   try {
     const db = admin.firestore();
     const usersRef = db.collection('users');
-    
+
     // Get the 10 most recent user documents
     const snapshot = await usersRef.orderBy('createdAt', 'desc').limit(10).get();
-    
+
     const recentUsers = snapshot.docs.map(doc => ({
       id: doc.id,
       data: doc.data(),
       createdAt: doc.data().createdAt?.toDate?.() || 'No timestamp'
     }));
-    
+
     response.json({
       success: true,
       message: 'Recent user documents',
       count: recentUsers.length,
       users: recentUsers
     });
-    
+
   } catch (error) {
     console.error('Error in debugUserCreation:', error);
     response.status(500).json({ error: 'Failed to fetch user documents', details: error });
@@ -69,28 +69,28 @@ export const testWelcomeEmail = onRequest(async (request, response) => {
 
     try {
       const success = await sendWelcomeEmail(testEmail, testName, tier);
-      
+
       if (success) {
         console.log(`Test welcome email sent successfully to ${testEmail}`);
-        response.json({ 
-          success: true, 
+        response.json({
+          success: true,
           message: `Test welcome email sent to ${testEmail}`,
           tier
         });
       } else {
-        response.status(500).json({ 
+        response.status(500).json({
           success: false,
-          error: 'Failed to send test email' 
+          error: 'Failed to send test email'
         });
       }
     } catch (emailError: any) {
       console.error('Email error:', emailError);
-      response.status(500).json({ 
-        error: 'Failed to send test email', 
+      response.status(500).json({
+        error: 'Failed to send test email',
         details: emailError.message
       });
     }
-    
+
   } catch (error: any) {
     console.error('Error in testWelcomeEmail function:', error);
     response.status(500).json({ error: 'Internal server error', details: error.message });
@@ -105,12 +105,15 @@ export { testApiConnection, addApiConnection, syncApiConnection, scheduledApiSyn
 // Export Stripe webhook
 export { stripeWebhook } from './webhooks/stripeWebhook'
 
+// Export Stripe customer management
+export { createStripeCustomer, createBillingPortalSession, getOrCreateStripeCustomer } from './stripe/stripeCustomer'
+
 // Function to send welcome email when a new user is created in Firebase Auth
 export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.user().onCreate(async (user) => {
   try {
     console.log('🎉 sendWelcomeEmail function triggered by Auth user creation!');
     console.log('📅 Timestamp:', new Date().toISOString());
-    
+
     const { email, uid } = user;
 
     console.log('User email:', email);
@@ -132,10 +135,10 @@ export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.us
     try {
       // Send welcome email
       const emailSent = await sendWelcomeEmail(email, user.displayName || undefined);
-      
+
       if (emailSent) {
         console.log(`Welcome email sent successfully to ${email}`);
-        
+
         // Send admin notification
         await sendAdminNotification(
           'New User Signup',
@@ -153,7 +156,7 @@ export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.us
       console.error('Error sending emails:', emailError);
       // Don't throw the error to avoid blocking user creation
     }
-    
+
   } catch (error) {
     console.error('Error in sendWelcomeEmail function:', error);
     // Don't throw the error to avoid blocking user creation

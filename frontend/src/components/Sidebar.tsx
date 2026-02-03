@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { useDeveloper } from '../contexts/DeveloperContext'
 
 export default function Sidebar() {
   const navigate = useNavigate()
@@ -10,6 +11,7 @@ export default function Sidebar() {
   const { currentUser, user, logout } = useAuth()
   const { organization } = useOrganization() // currentMember unused for now
   const { actualTheme, setTheme } = useTheme()
+  const { isDevMode, testMode, toggleTestMode } = useDeveloper()
   const [collapsed, setCollapsed] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
 
@@ -163,9 +165,9 @@ export default function Sidebar() {
       <div className="flex items-center p-4 border-b border-secondary-700">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <img 
-              src="/logos/jade-guru.svg" 
-              alt="AICoder.Guru" 
+            <img
+              src="/logos/jade-guru.svg"
+              alt="AICoder.Guru"
               className="w-8 h-8 flex-shrink-0"
             />
             <div>
@@ -174,9 +176,9 @@ export default function Sidebar() {
           </div>
         )}
         {collapsed && (
-          <img 
-            src="/logos/jade-guru.svg" 
-            alt="AICoder.Guru" 
+          <img
+            src="/logos/jade-guru.svg"
+            alt="AICoder.Guru"
             className="w-8 h-8 mx-auto"
           />
         )}
@@ -191,11 +193,10 @@ export default function Sidebar() {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
-                  isActive
-                    ? 'bg-accent-400 text-neutral-900 font-semibold'
-                    : 'text-white/80 hover:bg-secondary-800 hover:text-white'
-                }`}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${isActive
+                  ? 'bg-accent-400 text-neutral-900 font-semibold'
+                  : 'text-white/80 hover:bg-secondary-800 hover:text-white'
+                  }`}
                 title={collapsed ? item.label : undefined}
               >
                 {item.icon}
@@ -221,10 +222,10 @@ export default function Sidebar() {
             </>
           )}
         </div>
-        
+
         {/* Spacer to push collapse button to bottom */}
         <div className="flex-1"></div>
-        
+
         {/* Collapse/Expand Button */}
         <div className="px-2 pb-4">
           <button
@@ -241,6 +242,33 @@ export default function Sidebar() {
 
       {/* Bottom Section */}
       <div className="border-t border-secondary-700">
+        {/* Developer Test Mode Toggle - Only visible to developers */}
+        {isDevMode && (
+          <button
+            onClick={toggleTestMode}
+            className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${testMode
+                ? 'bg-yellow-900/30 text-yellow-400 hover:bg-yellow-900/40'
+                : 'text-white/80 hover:bg-secondary-800 hover:text-white'
+              }`}
+            title={collapsed ? (testMode ? 'Test mode ON' : 'Test mode OFF') : undefined}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            </svg>
+            {!collapsed && (
+              <div className="flex-1 flex items-center justify-between">
+                <span className="text-sm font-medium">Test Mode</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${testMode
+                    ? 'bg-yellow-400 text-neutral-900'
+                    : 'bg-secondary-700 text-white/60'
+                  }`}>
+                  {testMode ? 'ON' : 'OFF'}
+                </span>
+              </div>
+            )}
+          </button>
+        )}
+
         {/* Theme Toggle */}
         <button
           onClick={() => setTheme(actualTheme === 'dark' ? 'light' : 'dark')}
@@ -275,10 +303,10 @@ export default function Sidebar() {
               </div>
             )}
             {!collapsed && (
-              <svg 
+              <svg
                 className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${showUserMenu ? 'rotate-180' : ''}`}
-                fill="none" 
-                stroke="currentColor" 
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -290,7 +318,7 @@ export default function Sidebar() {
             <>
               {/* Backdrop */}
               <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-              
+
               {/* Menu - Solid background with distinct styling */}
               <div className={`absolute ${collapsed ? 'left-full ml-2' : 'left-0'} bottom-full mb-2 w-64 bg-secondary-950 rounded-lg shadow-2xl border-2 border-accent-400 py-2 z-50`}>
                 {organization && (
@@ -300,7 +328,7 @@ export default function Sidebar() {
                     <p className="text-xs text-accent-400 capitalize font-medium mt-1">{userRole} • {userTier.replace('_', ' ')}</p>
                   </div>
                 )}
-                
+
                 <button
                   onClick={handleLogout}
                   className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-2 font-medium"

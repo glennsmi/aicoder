@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { useAuth } from '../contexts/AuthContext'
 import { 
   AIProvider, 
   APIConnection, 
@@ -24,6 +23,14 @@ const AVAILABLE_PROVIDERS: {
   requiresOrg?: boolean
   documentationUrl?: string
 }[] = [
+  {
+    id: 'google_cloud_billing',
+    name: 'Google Cloud Billing (BigQuery Export)',
+    description: 'Ingest GCP costs from BigQuery Billing Export (optional per-user via resource labels)',
+    icon: '☁️',
+    requiresOrg: false,
+    documentationUrl: 'https://docs.cloud.google.com/billing/docs/reference/rest'
+  },
   {
     id: 'github_copilot',
     name: 'GitHub Copilot',
@@ -81,7 +88,6 @@ const AVAILABLE_PROVIDERS: {
 
 export default function APIConnectionManager() {
   const { organization } = useOrganization()
-  const { currentUser } = useAuth()
   const [connections, setConnections] = useState<APIConnection[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState<AIProvider | null>(null)
@@ -92,6 +98,13 @@ export default function APIConnectionManager() {
     organizationId: '',
     enterprise: '',
     additionalConfig: '',
+    // Google Cloud Billing (BigQuery export)
+    serviceAccountJson: '',
+    bigQueryProjectId: '',
+    datasetId: '',
+    tableId: '',
+    bigQueryLocation: '',
+    attributionLabelKey: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -190,7 +203,13 @@ export default function APIConnectionManager() {
         token: '',
         organizationId: '', 
         enterprise: '',
-        additionalConfig: '' 
+        additionalConfig: '',
+        serviceAccountJson: '',
+        bigQueryProjectId: '',
+        datasetId: '',
+        tableId: '',
+        bigQueryLocation: '',
+        attributionLabelKey: ''
       })
       setTestResult(null)
     } catch (err: any) {
@@ -233,6 +252,17 @@ export default function APIConnectionManager() {
 
   const buildCredentialsForProvider = (provider: AIProvider, creds: any) => {
     switch (provider) {
+      case 'google_cloud_billing':
+        return {
+          type: 'bigquery_billing_export',
+          serviceAccountJson: creds.serviceAccountJson,
+          bigQueryProjectId: creds.bigQueryProjectId,
+          datasetId: creds.datasetId,
+          tableId: creds.tableId,
+          bigQueryLocation: creds.bigQueryLocation?.trim() || undefined,
+          attributionLabelKey: creds.attributionLabelKey?.trim() || undefined
+        }
+
       case 'github_copilot':
         return {
           type: 'pat',
@@ -272,7 +302,14 @@ export default function APIConnectionManager() {
   }
 
   const isProviderSupported = (providerId: AIProvider) => {
-    return ['github_copilot', 'openai_codex', 'anthropic_usage', 'anthropic_code', 'claude_code'].includes(providerId)
+    return [
+      'google_cloud_billing',
+      'github_copilot',
+      'openai_codex',
+      'anthropic_usage',
+      'anthropic_code',
+      'claude_code'
+    ].includes(providerId)
   }
 
   return (
@@ -419,7 +456,7 @@ export default function APIConnectionManager() {
       {/* Add Connection Modal */}
       {showAddModal && selectedProvider && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-5xl p-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-4">
               Connect {getProviderInfo(selectedProvider)?.name}
             </h3>
@@ -459,74 +496,314 @@ export default function APIConnectionManager() {
               </div>
             )}
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
-                  Display Name *
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="e.g., Production API"
-                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
-                />
-              </div>
+            <div className={`grid grid-cols-1 ${selectedProvider === 'google_cloud_billing' ? 'lg:grid-cols-2' : ''} gap-6`}>
+              {/* Left: form */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                    Display Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="e.g., Production API"
+                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                  />
+                </div>
 
-              {selectedProvider === 'github_copilot' ? (
-                <>
+                {selectedProvider === 'github_copilot' ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        Personal Access Token *
+                      </label>
+                      <input
+                        type="password"
+                        value={credentials.token}
+                        onChange={(e) => setCredentials({ ...credentials, token: e.target.value })}
+                        placeholder="ghp_..."
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        Organization Name (or Enterprise)
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.organizationId}
+                        onChange={(e) => setCredentials({ ...credentials, organizationId: e.target.value })}
+                        placeholder="your-org-name"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                    </div>
+                  </>
+                ) : selectedProvider === 'google_cloud_billing' ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        Service Account JSON *
+                      </label>
+                      <textarea
+                        value={credentials.serviceAccountJson}
+                        onChange={(e) => setCredentials({ ...credentials, serviceAccountJson: e.target.value })}
+                        placeholder="{ ... }"
+                        rows={6}
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400 font-mono text-xs"
+                      />
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
+                        Needs BigQuery permissions to read the billing export table.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        BigQuery Project ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.bigQueryProjectId}
+                        onChange={(e) => setCredentials({ ...credentials, bigQueryProjectId: e.target.value })}
+                        placeholder="my-bq-project"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        Dataset ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.datasetId}
+                        onChange={(e) => setCredentials({ ...credentials, datasetId: e.target.value })}
+                        placeholder="billing_export"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        Table ID *
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.tableId}
+                        onChange={(e) => setCredentials({ ...credentials, tableId: e.target.value })}
+                        placeholder="gcp_billing_export_v1_XXXXXX_YYYYYY"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        BigQuery Location (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.bigQueryLocation}
+                        onChange={(e) => setCredentials({ ...credentials, bigQueryLocation: e.target.value })}
+                        placeholder="US or EU (or a region like europe-west2)"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
+                        Only needed if you see a location mismatch error while testing.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                        Attribution Label Key (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={credentials.attributionLabelKey}
+                        onChange={(e) => setCredentials({ ...credentials, attributionLabelKey: e.target.value })}
+                        placeholder="developer_email"
+                        className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                      />
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
+                        If your GCP resources are labeled (e.g. <span className="font-mono">developer_email</span>), we’ll group costs per label value.
+                      </p>
+                    </div>
+                  </>
+                ) : (
                   <div>
                     <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
-                      Personal Access Token *
+                      API Key *
                     </label>
                     <input
                       type="password"
-                      value={credentials.token}
-                      onChange={(e) => setCredentials({ ...credentials, token: e.target.value })}
-                      placeholder="ghp_..."
+                      value={credentials.apiKey}
+                      onChange={(e) => setCredentials({ ...credentials, apiKey: e.target.value })}
+                      placeholder="Enter your API key"
                       className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
                   </div>
+                )}
+
+                {selectedProvider === 'openai_codex' && (
                   <div>
                     <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
-                      Organization Name (or Enterprise)
+                      Organization ID (Optional)
                     </label>
                     <input
                       type="text"
                       value={credentials.organizationId}
                       onChange={(e) => setCredentials({ ...credentials, organizationId: e.target.value })}
-                      placeholder="your-org-name"
+                      placeholder="org-..."
                       className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
                   </div>
-                </>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
-                    API Key *
-                  </label>
-                  <input
-                    type="password"
-                    value={credentials.apiKey}
-                    onChange={(e) => setCredentials({ ...credentials, apiKey: e.target.value })}
-                    placeholder="Enter your API key"
-                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
-                  />
-                </div>
-              )}
+                )}
+              </div>
 
-              {selectedProvider === 'openai_codex' && (
-                <div>
-                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
-                    Organization ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={credentials.organizationId}
-                    onChange={(e) => setCredentials({ ...credentials, organizationId: e.target.value })}
-                    placeholder="org-..."
-                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
-                  />
+              {/* Right: help accordions (only for GCP billing) */}
+              {selectedProvider === 'google_cloud_billing' && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
+                    <h4 className="text-sm font-semibold text-neutral-900 dark:text-white">
+                      Setup help (step-by-step)
+                    </h4>
+                    <p className="mt-1 text-xs text-neutral-600 dark:text-gray-400">
+                      These steps walk you through finding each field in Google Cloud Console.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+                          Service Account JSON
+                        </span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+                        <ol className="list-decimal pl-5 space-y-2">
+                          <li>
+                            Open <span className="font-medium">Google Cloud Console</span> → <span className="font-medium">IAM &amp; Admin</span> → <span className="font-medium">Service Accounts</span>.
+                          </li>
+                          <li>
+                            Choose (or create) a service account dedicated to billing export reads (recommended).
+                          </li>
+                          <li>
+                            Click the service account → <span className="font-medium">Keys</span> tab → <span className="font-medium">Add key</span> → <span className="font-medium">Create new key</span> → JSON.
+                          </li>
+                          <li>
+                            Download the JSON, open it locally, and paste the <span className="font-mono">entire file contents</span> into this field.
+                          </li>
+                        </ol>
+                        <div className="rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-3">
+                          <p className="font-semibold mb-1">Minimum permissions (typical)</p>
+                          <ul className="list-disc pl-5 space-y-1">
+                            <li><span className="font-mono">BigQuery Job User</span> on the BigQuery project</li>
+                            <li><span className="font-mono">BigQuery Data Viewer</span> on the billing export dataset/table</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </details>
+
+                    <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+                          BigQuery Project ID
+                        </span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+                        <ol className="list-decimal pl-5 space-y-2">
+                          <li>Go to <span className="font-medium">BigQuery</span> in Google Cloud Console.</li>
+                          <li>In the left panel (“Explorer”), find the project that contains the billing export dataset.</li>
+                          <li>Use the project’s <span className="font-medium">Project ID</span> (not the display name).</li>
+                        </ol>
+                        <p className="text-neutral-600 dark:text-gray-400">
+                          Tip: Project ID looks like <span className="font-mono">my-bq-project</span>.
+                        </p>
+                      </div>
+                    </details>
+
+                    <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+                          Dataset ID
+                        </span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+                        <ol className="list-decimal pl-5 space-y-2">
+                          <li>In <span className="font-medium">BigQuery</span> → Explorer, expand your BigQuery project.</li>
+                          <li>Find the dataset created by <span className="font-medium">Cloud Billing Export</span> (common names: <span className="font-mono">billing_export</span>, <span className="font-mono">gcp_billing_export</span>).</li>
+                          <li>The dataset ID is the dataset name you see in Explorer.</li>
+                        </ol>
+                      </div>
+                    </details>
+
+                    <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+                          Table ID
+                        </span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+                        <ol className="list-decimal pl-5 space-y-2">
+                          <li>Expand the dataset in BigQuery Explorer to see tables/views.</li>
+                          <li>Select the billing export table (often starts with <span className="font-mono">gcp_billing_export</span>).</li>
+                          <li>Copy the table ID exactly as shown (no project/dataset prefix needed here).</li>
+                        </ol>
+                        <p className="text-neutral-600 dark:text-gray-400">
+                          Tip: If you enabled “Detailed cost export”, you may see more than one table/view.
+                        </p>
+                      </div>
+                    </details>
+
+                    <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+                          BigQuery Location (optional)
+                        </span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+                        <p>
+                          Leave this blank unless testing fails with a “location mismatch” error.
+                        </p>
+                        <ol className="list-decimal pl-5 space-y-2">
+                          <li>In BigQuery, click the dataset → look for <span className="font-medium">Location</span> in dataset details.</li>
+                          <li>Enter <span className="font-mono">EU</span> or <span className="font-mono">US</span> for multi-region datasets, or a region like <span className="font-mono">europe-west2</span>.</li>
+                        </ol>
+                      </div>
+                    </details>
+
+                    <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+                          Attribution Label Key (optional)
+                        </span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+                        <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+                      </summary>
+                      <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+                        <p>
+                          This enables “cost per developer” <span className="font-medium">only if</span> your billed resources are consistently labeled.
+                        </p>
+                        <ol className="list-decimal pl-5 space-y-2">
+                          <li>Pick a label key (example: <span className="font-mono">developer_email</span> or <span className="font-mono">owner</span>).</li>
+                          <li>Ensure resources that incur cost (Vertex AI, GCE, GKE, etc.) are labeled with that key.</li>
+                          <li>Enter just the <span className="font-medium">key</span> here. The connector groups costs by label <span className="font-medium">value</span>.</li>
+                        </ol>
+                        <p className="text-neutral-600 dark:text-gray-400">
+                          If you don’t have labels yet, you’ll still get accurate total/project/service costs—just not developer attribution.
+                        </p>
+                      </div>
+                    </details>
+                  </div>
                 </div>
               )}
             </div>
@@ -536,7 +813,14 @@ export default function APIConnectionManager() {
                 onClick={handleTestConnection}
                 disabled={
                   testingConnection || 
-                  (!credentials.apiKey && !credentials.token) ||
+                  (
+                    selectedProvider === 'google_cloud_billing'
+                      ? !credentials.serviceAccountJson ||
+                        !credentials.bigQueryProjectId ||
+                        !credentials.datasetId ||
+                        !credentials.tableId
+                      : (!credentials.apiKey && !credentials.token)
+                  ) ||
                   (selectedProvider === 'github_copilot' && !credentials.organizationId)
                 }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -555,7 +839,13 @@ export default function APIConnectionManager() {
                       token: '',
                       organizationId: '', 
                       enterprise: '',
-                      additionalConfig: '' 
+                      additionalConfig: '',
+                      serviceAccountJson: '',
+                      bigQueryProjectId: '',
+                      datasetId: '',
+                      tableId: '',
+                      bigQueryLocation: '',
+                      attributionLabelKey: ''
                     })
                     setTestResult(null)
                     setError(null)

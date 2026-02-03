@@ -7,10 +7,14 @@ import { Timestamp } from 'firebase/firestore';
 export type AIProvider = 
   | 'cursor'
   | 'github_copilot'
+  | 'openai_codex'
+  | 'anthropic_usage'
+  | 'anthropic_code'
+  | 'claude_code'
+  | 'google_cloud_billing'
+  | 'gemini'
   | 'codeium'
   | 'tabnine'
-  | 'claude_code'
-  | 'openai_codex'
   | 'replit_ghostwriter'
   | 'aws_codewhisperer';
 
@@ -22,7 +26,7 @@ export type ConnectionStatus = 'active' | 'failed' | 'paused' | 'testing';
 /**
  * Sync Status
  */
-export type SyncStatus = 'pending' | 'syncing' | 'completed' | 'failed';
+export type SyncStatus = 'success' | 'failed' | 'partial' | 'in_progress';
 
 /**
  * API Connection Configuration
@@ -31,31 +35,27 @@ export interface APIConnection {
   id: string;
   organizationId: string;
   provider: AIProvider;
-  name: string; // User-friendly name for this connection
+  displayName: string; // User-friendly name for this connection
   credentials: EncryptedCredentials;
   status: ConnectionStatus;
-  addedBy: string; // User ID who added the connection
-  lastSyncAt?: Date | Timestamp;
-  nextSyncAt?: Date | Timestamp;
-  syncFrequency: SyncFrequency; // How often to sync
-  errorMessage?: string; // Last error message if failed
-  createdAt: Date | Timestamp;
-  updatedAt: Date | Timestamp;
+  createdBy: string; // User ID who added the connection
+  lastSyncAt?: Timestamp;
+  nextSyncAt?: Timestamp;
+  lastError?: string; // Last error message if failed
+  syncFrequency: 'daily' | 'hourly' | 'manual'; // How often to sync
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 /**
  * Encrypted credentials (stored encrypted in Firestore)
  */
 export interface EncryptedCredentials {
-  encrypted: string; // Encrypted credential data
-  iv: string; // Initialization vector for decryption
-  provider: AIProvider; // Which provider these credentials are for
+  encryptedData: string; // AES-256-GCM encrypted JSON
+  iv: string; // Initialization vector
+  authTag: string; // Authentication tag
+  encryptedAt: Timestamp;
 }
-
-/**
- * Sync Frequency Options
- */
-export type SyncFrequency = 'hourly' | 'daily' | 'weekly' | 'manual';
 
 /**
  * Sync History Record
@@ -65,279 +65,221 @@ export interface SyncHistory {
   connectionId: string;
   organizationId: string;
   provider: AIProvider;
+  startTime: Timestamp;
+  endTime?: Timestamp;
   status: SyncStatus;
-  startedAt: Date | Timestamp;
-  completedAt?: Date | Timestamp;
-  recordsProcessed: number;
+  recordsSynced: number;
   recordsFailed: number;
-  errorMessage?: string;
-  errorDetails?: string;
+  errors: string[];
+  metadata?: {
+    dateRange?: { start: string; end: string };
+    totalCost?: number;
+    totalTokens?: number;
+    [key: string]: any;
+  };
 }
 
 /**
- * Provider Metadata
+ * Standard usage data format
  */
-export interface ProviderMetadata {
+export interface UsageData {
+  date: string; // YYYY-MM-DD
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  model: string;
   provider: AIProvider;
-  name: string;
-  description: string;
-  websiteUrl: string;
-  logoUrl?: string;
-  requiresOrgAccess: boolean; // Whether org-level access is needed
-  credentialFields: CredentialField[];
-  documentationUrl?: string;
-  supportedFeatures: string[];
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens?: number;
+  totalTokens: number;
+  requests: number;
+  cost: number;
+  currency: string;
+  metadata?: {
+    language?: string;
+    editor?: string;
+    suggestions?: number;
+    acceptances?: number;
+    [key: string]: any;
+  };
 }
 
 /**
- * Credential Field Definition
+ * Provider-specific credential schemas
  */
-export interface CredentialField {
-  key: string;
-  label: string;
-  type: 'text' | 'password' | 'api_key' | 'oauth';
-  required: boolean;
-  placeholder?: string;
-  helpText?: string;
-  validation?: string; // Regex pattern for validation
+export interface GitHubCopilotCredentials {
+  type: 'pat' | 'github_app';
+  token: string; // Personal Access Token
+  organization?: string;
+  enterprise?: string;
+}
+
+export interface OpenAICredentials {
+  apiKey: string;
+  organizationId?: string;
+}
+
+export interface AnthropicUsageCredentials {
+  apiKey: string;
+}
+
+export interface AnthropicCodeCredentials {
+  apiKey: string;
+}
+
+export interface CursorCredentials {
+  // CSV upload only for now
+  method: 'csv';
+}
+
+export interface GeminiCredentials {
+  apiKey: string;
+  projectId?: string;
 }
 
 /**
- * Raw credentials before encryption (never stored)
+ * Google Cloud Billing (via BigQuery Billing Export) credentials
+ *
+ * Note: The Cloud Billing REST API is primarily for billing account metadata and catalog.
+ * Actual cost line items are typically ingested from BigQuery Billing Export.
  */
-export interface RawCredentials {
+export interface GoogleCloudBillingCredentials {
+  type: 'bigquery_billing_export';
+  /**
+   * Service account JSON content (stringified JSON).
+   * Must have access to run BigQuery jobs and read the billing export table.
+   */
+  serviceAccountJson: string;
+  /** BigQuery project that contains the billing export dataset */
+  bigQueryProjectId: string;
+  /** BigQuery dataset ID containing the billing export table */
+  datasetId: string;
+  /** BigQuery table ID (not a wildcard). Example: gcp_billing_export_v1_XXXXXX_YYYYYY */
+  tableId: string;
+  /**
+   * Optional BigQuery job location (e.g. "US", "EU", "europe-west2").
+   * If omitted, the connector will try sensible defaults.
+   */
+  bigQueryLocation?: string;
+  /**
+   * Optional label key used to attribute costs to a user (e.g. "developer_email").
+   * Requires your GCP resources to be labeled consistently.
+   */
+  attributionLabelKey?: string;
+}
+
+export interface CodeiumCredentials {
+  apiKey: string;
+  enterpriseId?: string;
+}
+
+// Union type for all credential types
+export type ProviderCredentials =
+  | GitHubCopilotCredentials
+  | OpenAICredentials
+  | AnthropicUsageCredentials
+  | AnthropicCodeCredentials
+  | CursorCredentials
+  | GoogleCloudBillingCredentials
+  | GeminiCredentials
+  | CodeiumCredentials;
+
+// Sync result from connector
+export interface SyncResult {
+  success: boolean;
+  recordsSynced: number;
+  recordsFailed: number;
+  errors: string[];
+  metadata?: any;
+}
+
+// Test connection result
+export interface TestConnectionResult {
+  success: boolean;
+  message: string;
+  metadata?: {
+    organizationName?: string;
+    availableSeats?: number;
+    billingCycle?: string;
+    [key: string]: any;
+  };
+}
+
+// Cloud Function request/response types
+export interface TestConnectionRequest {
   provider: AIProvider;
-  [key: string]: string | undefined;
+  credentials: ProviderCredentials;
+}
+
+export interface AddConnectionRequest {
+  organizationId: string;
+  provider: AIProvider;
+  displayName: string;
+  credentials: ProviderCredentials;
+  syncFrequency?: 'daily' | 'hourly' | 'manual';
+}
+
+export interface SyncConnectionRequest {
+  connectionId: string;
+  dateRange?: {
+    start: string; // YYYY-MM-DD
+    end: string;   // YYYY-MM-DD
+  };
+}
+
+export interface AddConnectionResponse {
+  connectionId: string;
+  status: ConnectionStatus;
+  message: string;
 }
 
 /**
  * Zod Schemas
  */
-
 export const EncryptedCredentialsSchema = z.object({
-  encrypted: z.string(),
+  encryptedData: z.string(),
   iv: z.string(),
-  provider: z.enum(['cursor', 'github_copilot', 'codeium', 'tabnine', 'claude_code', 'openai_codex', 'replit_ghostwriter', 'aws_codewhisperer']),
+  authTag: z.string(),
+  encryptedAt: z.any(), // Timestamp
 });
 
 export const APIConnectionSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
-  provider: z.enum(['cursor', 'github_copilot', 'codeium', 'tabnine', 'claude_code', 'openai_codex', 'replit_ghostwriter', 'aws_codewhisperer']),
-  name: z.string().min(1).max(100),
+  provider: z.enum(['cursor', 'github_copilot', 'openai_codex', 'anthropic_usage', 'anthropic_code', 'claude_code', 'google_cloud_billing', 'gemini', 'codeium', 'tabnine', 'replit_ghostwriter', 'aws_codewhisperer']),
+  displayName: z.string().min(1).max(100),
   credentials: EncryptedCredentialsSchema,
   status: z.enum(['active', 'failed', 'paused', 'testing']),
-  addedBy: z.string(),
-  lastSyncAt: z.date().optional(),
-  nextSyncAt: z.date().optional(),
-  syncFrequency: z.enum(['hourly', 'daily', 'weekly', 'manual']),
-  errorMessage: z.string().optional(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+  createdBy: z.string(),
+  lastSyncAt: z.any().optional(), // Timestamp
+  nextSyncAt: z.any().optional(), // Timestamp
+  lastError: z.string().optional(),
+  syncFrequency: z.enum(['daily', 'hourly', 'manual']),
+  createdAt: z.any(), // Timestamp
+  updatedAt: z.any(), // Timestamp
 });
 
 export const SyncHistorySchema = z.object({
   id: z.string(),
   connectionId: z.string(),
   organizationId: z.string(),
-  provider: z.enum(['cursor', 'github_copilot', 'codeium', 'tabnine', 'claude_code', 'openai_codex', 'replit_ghostwriter', 'aws_codewhisperer']),
-  status: z.enum(['pending', 'syncing', 'completed', 'failed']),
-  startedAt: z.date(),
-  completedAt: z.date().optional(),
-  recordsProcessed: z.number().int().min(0),
+  provider: z.enum(['cursor', 'github_copilot', 'openai_codex', 'anthropic_usage', 'anthropic_code', 'claude_code', 'google_cloud_billing', 'gemini', 'codeium', 'tabnine', 'replit_ghostwriter', 'aws_codewhisperer']),
+  startTime: z.any(), // Timestamp
+  endTime: z.any().optional(), // Timestamp
+  status: z.enum(['success', 'failed', 'partial', 'in_progress']),
+  recordsSynced: z.number().int().min(0),
   recordsFailed: z.number().int().min(0),
-  errorMessage: z.string().optional(),
-  errorDetails: z.string().optional(),
+  errors: z.array(z.string()),
+  metadata: z.object({
+    dateRange: z.object({
+      start: z.string(),
+      end: z.string(),
+    }).optional(),
+    totalCost: z.number().optional(),
+    totalTokens: z.number().optional(),
+  }).optional(),
 });
-
-/**
- * Provider Configurations
- */
-export const PROVIDER_METADATA: Record<AIProvider, ProviderMetadata> = {
-  cursor: {
-    provider: 'cursor',
-    name: 'Cursor',
-    description: 'AI-first code editor with usage tracking',
-    websiteUrl: 'https://cursor.sh',
-    requiresOrgAccess: false,
-    credentialFields: [
-      {
-        key: 'apiKey',
-        label: 'API Key',
-        type: 'api_key',
-        required: true,
-        placeholder: 'cur_...',
-        helpText: 'Find your API key in Cursor Settings > Usage',
-      },
-    ],
-    documentationUrl: 'https://cursor.sh/docs/api',
-    supportedFeatures: ['usage_tracking', 'token_breakdown', 'model_stats'],
-  },
-  github_copilot: {
-    provider: 'github_copilot',
-    name: 'GitHub Copilot',
-    description: 'AI pair programmer by GitHub',
-    websiteUrl: 'https://github.com/features/copilot',
-    requiresOrgAccess: true,
-    credentialFields: [
-      {
-        key: 'accessToken',
-        label: 'GitHub Access Token',
-        type: 'api_key',
-        required: true,
-        placeholder: 'ghp_...',
-        helpText: 'Personal access token with org:read scope',
-      },
-      {
-        key: 'organizationSlug',
-        label: 'Organization Slug',
-        type: 'text',
-        required: true,
-        placeholder: 'my-org',
-        helpText: 'Your GitHub organization name',
-      },
-    ],
-    documentationUrl: 'https://docs.github.com/en/rest/copilot',
-    supportedFeatures: ['usage_tracking', 'seat_management'],
-  },
-  codeium: {
-    provider: 'codeium',
-    name: 'Codeium',
-    description: 'Free AI-powered code completion',
-    websiteUrl: 'https://codeium.com',
-    requiresOrgAccess: true,
-    credentialFields: [
-      {
-        key: 'apiKey',
-        label: 'Team API Key',
-        type: 'api_key',
-        required: true,
-        placeholder: 'cdm_...',
-        helpText: 'Team admin API key from Codeium dashboard',
-      },
-    ],
-    documentationUrl: 'https://codeium.com/docs/api',
-    supportedFeatures: ['usage_tracking'],
-  },
-  tabnine: {
-    provider: 'tabnine',
-    name: 'Tabnine',
-    description: 'AI code completion for teams',
-    websiteUrl: 'https://www.tabnine.com',
-    requiresOrgAccess: true,
-    credentialFields: [
-      {
-        key: 'apiKey',
-        label: 'Enterprise API Key',
-        type: 'api_key',
-        required: true,
-        placeholder: 'tab_...',
-        helpText: 'Enterprise API key from Tabnine admin portal',
-      },
-    ],
-    documentationUrl: 'https://www.tabnine.com/docs/api',
-    supportedFeatures: ['usage_tracking', 'team_analytics'],
-  },
-  claude_code: {
-    provider: 'claude_code',
-    name: 'Claude Code',
-    description: 'Anthropic Claude for coding',
-    websiteUrl: 'https://www.anthropic.com',
-    requiresOrgAccess: false,
-    credentialFields: [
-      {
-        key: 'apiKey',
-        label: 'Anthropic API Key',
-        type: 'api_key',
-        required: true,
-        placeholder: 'sk-ant-...',
-        helpText: 'API key from Anthropic Console',
-      },
-    ],
-    documentationUrl: 'https://docs.anthropic.com',
-    supportedFeatures: ['usage_tracking', 'token_breakdown'],
-  },
-  openai_codex: {
-    provider: 'openai_codex',
-    name: 'OpenAI Codex',
-    description: 'OpenAI GPT for code generation',
-    websiteUrl: 'https://openai.com',
-    requiresOrgAccess: true,
-    credentialFields: [
-      {
-        key: 'apiKey',
-        label: 'OpenAI API Key',
-        type: 'api_key',
-        required: true,
-        placeholder: 'sk-...',
-        helpText: 'Organization API key from OpenAI',
-      },
-      {
-        key: 'organizationId',
-        label: 'Organization ID',
-        type: 'text',
-        required: false,
-        placeholder: 'org-...',
-        helpText: 'Optional: your OpenAI organization ID',
-      },
-    ],
-    documentationUrl: 'https://platform.openai.com/docs',
-    supportedFeatures: ['usage_tracking', 'token_breakdown', 'cost_tracking'],
-  },
-  replit_ghostwriter: {
-    provider: 'replit_ghostwriter',
-    name: 'Replit Ghostwriter',
-    description: 'AI pair programmer by Replit',
-    websiteUrl: 'https://replit.com',
-    requiresOrgAccess: true,
-    credentialFields: [
-      {
-        key: 'apiKey',
-        label: 'Replit API Key',
-        type: 'api_key',
-        required: true,
-        placeholder: 'repl_...',
-        helpText: 'Team API key from Replit',
-      },
-    ],
-    supportedFeatures: ['usage_tracking'],
-  },
-  aws_codewhisperer: {
-    provider: 'aws_codewhisperer',
-    name: 'AWS CodeWhisperer',
-    description: 'AI coding companion by AWS',
-    websiteUrl: 'https://aws.amazon.com/codewhisperer',
-    requiresOrgAccess: true,
-    credentialFields: [
-      {
-        key: 'accessKeyId',
-        label: 'AWS Access Key ID',
-        type: 'text',
-        required: true,
-        placeholder: 'AKIA...',
-        helpText: 'AWS access key with CodeWhisperer permissions',
-      },
-      {
-        key: 'secretAccessKey',
-        label: 'AWS Secret Access Key',
-        type: 'password',
-        required: true,
-        placeholder: '...',
-        helpText: 'AWS secret access key',
-      },
-      {
-        key: 'region',
-        label: 'AWS Region',
-        type: 'text',
-        required: true,
-        placeholder: 'us-east-1',
-        helpText: 'AWS region for CodeWhisperer',
-      },
-    ],
-    documentationUrl: 'https://docs.aws.amazon.com/codewhisperer',
-    supportedFeatures: ['usage_tracking'],
-  },
-};
 
 /**
  * Helper type for creating new connections

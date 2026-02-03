@@ -28,7 +28,13 @@ service cloud.firestore {
       }
       
       match /apiConnections/{connectionId} {
-        allow read, write: if isAuthenticated();
+        // Only organization members can read API connections
+        allow read: if isAuthenticated() && 
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+        // Only admins can manage API connections (write/create/delete)
+        allow write: if isAuthenticated() && 
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role == 'admin';
       }
       
       match /usage/{usageId} {
@@ -79,7 +85,11 @@ service cloud.firestore {
     
     // ===== SYNC HISTORY =====
     match /syncHistory/{syncId} {
-      allow read, write: if isAuthenticated();
+      // Only organization members can read sync history
+      allow read: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/organizations/$(resource.data.organizationId)/members/$(request.auth.uid));
+      // Only Cloud Functions can write sync history (no client writes)
+      allow write: if false;
     }
   }
 }

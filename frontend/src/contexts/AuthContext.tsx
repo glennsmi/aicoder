@@ -22,7 +22,9 @@ import {
   where, 
   getDocs,
   updateDoc,
-  Timestamp 
+  Timestamp,
+  onSnapshot,
+  Unsubscribe
 } from 'firebase/firestore'
 import { auth, db } from '../config/firebaseApp'
 import { User, Invitation, OrganizationRole } from '@cursor-costs/shared'
@@ -61,6 +63,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [initializing, setInitializing] = useState(true)
+  const [userListener, setUserListener] = useState<Unsubscribe | null>(null)
+
+  // Set up real-time listener for user document changes
+  function setupUserListener(uid: string) {
+    // Clean up existing listener
+    if (userListener) {
+      userListener()
+      setUserListener(null)
+    }
+
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', uid),
+      (doc) => {
+        if (doc.exists()) {
+          const userData = {
+            id: doc.id,
+            ...doc.data()
+          } as User
+          setUser(userData)
+          console.log('User data updated via real-time listener:', userData)
+        } else {
+          setUser(null)
+        }
+      },
+      (error) => {
+        console.error('User listener error:', error)
+      }
+    )
+
+    setUserListener(() => unsubscribe)
+  }
+
+  // Clean up user listener
+  function cleanupUserListener() {
+    if (userListener) {
+      userListener()
+      setUserListener(null)
+    }
+  }
 
   // Fetch full user data from Firestore
   async function fetchUserData(uid: string): Promise<User | null> {
@@ -632,11 +673,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setCurrentUser(firebaseUser)
       
       if (firebaseUser) {
-        // Fetch full user data from Firestore
+        // Fetch initial user data from Firestore
         const userData = await fetchUserData(firebaseUser.uid)
         setUser(userData)
+        
+        // Set up real-time listener for user document changes
+        setupUserListener(firebaseUser.uid)
       } else {
         setUser(null)
+        cleanupUserListener()
       }
       
       setLoading(false)
@@ -645,7 +690,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     })
 
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      cleanupUserListener()
+    }
   }, [initializing])
 
   const value = {

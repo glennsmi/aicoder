@@ -3,13 +3,15 @@ import { GitHubCopilotConnector } from './GitHubCopilotConnector'
 import { OpenAIConnector } from './OpenAIConnector'
 import { AnthropicUsageConnector } from './AnthropicUsageConnector'
 import { AnthropicCodeConnector } from './AnthropicCodeConnector'
+import { GoogleCloudBillingConnector } from './GoogleCloudBillingConnector'
 import {
   AIProvider,
   ProviderCredentials,
   GitHubCopilotCredentials,
   OpenAICredentials,
   AnthropicUsageCredentials,
-  AnthropicCodeCredentials
+  AnthropicCodeCredentials,
+  GoogleCloudBillingCredentials
 } from '../shared'
 
 /**
@@ -33,6 +35,9 @@ export class ConnectorFactory {
       case 'anthropic_code':
       case 'claude_code':
         return new AnthropicCodeConnector(credentials as AnthropicCodeCredentials)
+
+      case 'google_cloud_billing':
+        return new GoogleCloudBillingConnector(credentials as GoogleCloudBillingCredentials)
 
       case 'cursor':
         throw new Error('Cursor integration uses CSV upload only. API not available.')
@@ -58,7 +63,8 @@ export class ConnectorFactory {
       'openai_codex',
       'anthropic_usage',
       'anthropic_code',
-      'claude_code'
+      'claude_code',
+      'google_cloud_billing'
     ]
   }
 

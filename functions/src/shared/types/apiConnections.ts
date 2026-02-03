@@ -8,6 +8,7 @@ export type AIProvider =
   | 'anthropic_usage'
   | 'anthropic_code'
   | 'claude_code' 
+  | 'google_cloud_billing'
   | 'gemini' 
   | 'codeium' 
   | 'tabnine'
@@ -118,6 +119,19 @@ export interface GeminiCredentials {
   projectId?: string
 }
 
+/**
+ * Google Cloud Billing (via BigQuery Billing Export) credentials
+ */
+export interface GoogleCloudBillingCredentials {
+  type: 'bigquery_billing_export'
+  serviceAccountJson: string
+  bigQueryProjectId: string
+  datasetId: string
+  tableId: string
+  bigQueryLocation?: string
+  attributionLabelKey?: string
+}
+
 export interface CodeiumCredentials {
   apiKey: string
   enterpriseId?: string
@@ -130,6 +144,7 @@ export type ProviderCredentials =
   | AnthropicUsageCredentials
   | AnthropicCodeCredentials
   | CursorCredentials
+  | GoogleCloudBillingCredentials
   | GeminiCredentials
   | CodeiumCredentials
 
