@@ -101,6 +101,8 @@ export const testWelcomeEmail = onRequest(async (request, response) => {
 export { createTeam } from './teams/createTeam'
 export { addTeamMember } from './teams/addTeamMember'
 export { testApiConnection, addApiConnection, syncApiConnection, scheduledApiSync } from './api/apiConnections'
+export { ingestUsageEventsFromCursorCsv } from './usage/ingestUsageEventsFromCursorCsv'
+export { refreshPricingCatalog } from './pricing/refreshPricingCatalog'
 
 // Export Stripe webhook
 export { stripeWebhook } from './webhooks/stripeWebhook'

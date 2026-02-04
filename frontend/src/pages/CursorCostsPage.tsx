@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 // import { useNavigate } from 'react-router-dom' // Not currently used
 import { useAuth } from '../contexts/AuthContext'
 // import { useOrganization } from '../contexts/OrganizationContext' // Not currently used
@@ -13,6 +13,9 @@ import AdminPage from './AdminPage'
 import AboutModal from '@/components/AboutModal'
 import { useCurrency } from '../hooks/useCurrency'
 import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../config/firebaseApp'
+import { getUserCursorUsageEventsV2 } from '@/lib/usageEvents'
 
 
 export default function CursorCostsPage() {
@@ -45,6 +48,8 @@ export default function CursorCostsPage() {
   const [showAboutModal, setShowAboutModal] = useState(false)
 
   const [tempDataV2, setTempDataV2] = useState<CursorUsageV2[]>([])
+  const [isSavingUsageEvents, setIsSavingUsageEvents] = useState(false)
+  const [isLoadingSavedEvents, setIsLoadingSavedEvents] = useState(false)
 
   // Show the uploaded tokens data immediately for both guests and logged-in users
   const displayDataV2 = tempDataV2
@@ -73,18 +78,103 @@ export default function CursorCostsPage() {
 
 
 
+  const loadSavedEvents = async () => {
+    if (!currentUser?.uid) return
+    try {
+      setIsLoadingSavedEvents(true)
+      const days = 365
+      const startMs = Date.now() - days * 24 * 60 * 60 * 1000
+      const events = await getUserCursorUsageEventsV2(currentUser.uid, { startMs })
+      if (events.length > 0) {
+        setTempDataV2(events)
+      }
+    } catch (e) {
+      console.error('Failed to load saved usage events:', e)
+      // Surface a user-friendly message (often permissions/rules-related).
+      setPasteError('Could not load your saved usage yet. If this persists, refresh the page.')
+    } finally {
+      setIsLoadingSavedEvents(false)
+    }
+  }
+
+  // Initial load from saved data for authenticated users
+  // (keeps charts persistent across refreshes/sessions)
+  useEffect(() => {
+    if (currentUser?.uid) {
+      void loadSavedEvents()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.uid])
+
   // New: handle tokens-based CSV import (tokens-only flow)
-const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImportSummary) => {
+const handleTokensImport = async (
+  rows: CursorUsageV2[],
+  summary: CursorUsageImportSummary,
+  fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+) => {
   console.log('🎯 CursorCostsPage: handleTokensImport called with', rows.length, 'rows and summary:', summary)
   console.log('🎯 CursorCostsPage: First few rows:', rows.slice(0, 3))
+
+  // Always update the UI immediately (keep the "drop → instant chart" experience).
+  setTempDataV2(rows)
   
   if (currentUser) {
-    // TODO: once backend updated, save tokens-only rows; for now, just display
-    console.log('👤 CursorCostsPage: User is logged in, setting temp data for display')
-    setTempDataV2(rows)
+    try {
+      console.log('👤 CursorCostsPage: User is logged in, ingesting usage events...')
+      setSaveResult(null)
+      clearError()
+      setPasteError(null)
+      setIsSavingUsageEvents(true)
+
+      const importId = `cursor_csv_${Date.now()}`
+      const ingest = httpsCallable(functions, 'ingestUsageEventsFromCursorCsv')
+
+      // Chunk to avoid callable payload limits
+      const chunkSize = 2000
+      let saved = 0
+      let duplicates = 0
+      const errors: string[] = []
+
+      // Run the save in the background; do not block the UI thread.
+      void (async () => {
+        try {
+          const batches = (fileBatches && fileBatches.length > 0)
+            ? fileBatches
+            : [{ fileName: 'cursor.csv', fileHash: '', rows }]
+
+          for (const batch of batches) {
+            for (let i = 0; i < batch.rows.length; i += chunkSize) {
+              const chunk = batch.rows.slice(i, i + chunkSize)
+              const result = await ingest({
+                importId,
+                fileName: batch.fileName,
+                ...(batch.fileHash ? { fileHash: batch.fileHash } : {}),
+                rows: chunk,
+              })
+
+              const data = result.data as any
+              saved += Number(data?.saved || 0)
+              duplicates += Number(data?.duplicates || 0)
+            }
+          }
+
+          setSaveResult({ saved, duplicates, errors })
+          // Refresh the UI from Firestore so we are charting persisted stitched data.
+          await loadSavedEvents()
+        } catch (e: any) {
+          console.error('Failed to ingest usage events:', e)
+          setPasteError(e?.message || 'Failed to save your usage data. Please try again.')
+        } finally {
+          setIsSavingUsageEvents(false)
+        }
+      })()
+    } catch (e: any) {
+      console.error('Failed to ingest usage events:', e)
+      setPasteError(e?.message || 'Failed to save your usage data. Please try again.')
+      setIsSavingUsageEvents(false)
+    }
   } else {
     console.log('👤 CursorCostsPage: User is guest, setting temp data for display')
-    setTempDataV2(rows)
   }
   
   console.log('✅ CursorCostsPage: tempDataV2 state updated, should trigger re-render')
@@ -286,18 +376,28 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
             onTokensImport={handleTokensImport}
             onClear={handleClear}
             hasData={displayDataV2.length > 0}
-            disabled={loading}
+            disabled={loading || isSavingUsageEvents}
           />
           
-          {loading && (
+          {(loading || isSavingUsageEvents) && (
             <div className="mt-4 flex items-center justify-center">
               <div className="flex items-center">
-                <img src="/logos/fueld-logo-symbol.svg" alt="Fueld" className="w-6 h-6 mr-3 animate-pulse" />
+                <img
+                  src="/logos/jade-guru.svg"
+                  alt="AICoder.Guru"
+                  className="w-6 h-6 mr-3 animate-pulse"
+                />
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500 mr-2"></div>
               </div>
               <span className="text-neutral-900 dark:text-gray-200">
-                {currentUser ? 'Saving to your account...' : 'Processing...'}
+                {isSavingUsageEvents ? 'Saving to your account...' : (currentUser ? 'Loading your data...' : 'Processing...')}
               </span>
+            </div>
+          )}
+
+          {isLoadingSavedEvents && !isSavingUsageEvents && (
+            <div className="mt-3 text-center text-sm text-gray-600 dark:text-gray-300">
+              Loading saved usage…
             </div>
           )}
         </div>

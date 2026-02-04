@@ -75,6 +75,18 @@ service cloud.firestore {
       match /cursorUsage/{usageId} {
         allow read, write, create, delete: if isUser(userId);
       }
+
+      // ===== UNIFIED USAGE EVENTS =====
+      match /usageEvents/{eventId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+    }
+
+    // ===== PRICING CATALOG =====
+    // Written by Cloud Functions (Admin SDK bypasses rules). Allow reads for authenticated users for now.
+    match /pricingCatalog/{docId}/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
     
     // ===== CURRENCY RATES =====

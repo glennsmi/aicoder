@@ -2,6 +2,7 @@
 export * from './types/common';
 export * from './types/currency';
 export * from './types/usage';
+export * from './types/usageEvent';
 export * from './types/organization';
 export * from './types/team';
 export * from './types/billing';

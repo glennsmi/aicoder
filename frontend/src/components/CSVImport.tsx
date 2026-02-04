@@ -6,7 +6,11 @@ interface CSVImportProps {
   onClear?: () => void
   hasData?: boolean
   disabled?: boolean
-  onTokensImport?: (data: CursorUsageV2[], summary: CursorUsageImportSummary) => void
+  onTokensImport?: (
+    data: CursorUsageV2[],
+    summary: CursorUsageImportSummary,
+    fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+  ) => void
 }
 
 export default function CSVImport({ onClear: _onClear, hasData: _hasData, disabled = false, onTokensImport }: CSVImportProps) {
@@ -14,11 +18,15 @@ export default function CSVImport({ onClear: _onClear, hasData: _hasData, disabl
 
   // Paste functionality removed – CSV upload is the primary input path now
 
-  const handleTokensImport = (data: CursorUsageV2[], summary: CursorUsageImportSummary) => {
+  const handleTokensImport = (
+    data: CursorUsageV2[],
+    summary: CursorUsageImportSummary,
+    fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+  ) => {
     console.log('📤 CSVImport: handleTokensImport called with', data.length, 'rows and summary:', summary)
     if (onTokensImport) {
       console.log('✅ CSVImport: Calling onTokensImport prop')
-      onTokensImport(data, summary)
+      onTokensImport(data, summary, fileBatches)
     } else {
       console.log('❌ CSVImport: onTokensImport prop not provided')
     }
@@ -33,9 +41,9 @@ export default function CSVImport({ onClear: _onClear, hasData: _hasData, disabl
       <div className="mb-4">
         <CSVDragDrop
           disabled={disabled}
-          onImport={(data, summary) => {
+          onImport={(data, summary, fileBatches) => {
             console.log('📤 CSVImport: CSVDragDrop onImport called with', data.length, 'rows')
-            handleTokensImport(data, summary)
+            handleTokensImport(data, summary, fileBatches)
           }}
         />
       </div>

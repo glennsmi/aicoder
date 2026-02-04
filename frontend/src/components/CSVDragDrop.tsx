@@ -2,7 +2,11 @@ import { useCallback, useState } from 'react'
 import { CursorUsageV2, CursorUsageImportSummary, TokenBreakdown } from '@shared'
 
 interface CSVDragDropProps {
-  onImport: (data: CursorUsageV2[], summary: CursorUsageImportSummary) => void
+  onImport: (
+    data: CursorUsageV2[],
+    summary: CursorUsageImportSummary,
+    fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+  ) => void
   disabled?: boolean
 }
 
@@ -133,6 +137,14 @@ const toUsage = (row: string[], idxMap: {
   return usage
 }
 
+const sha256Hex = async (text: string): Promise<string> => {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  const bytes = Array.from(new Uint8Array(digest))
+  return bytes.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 export default function CSVDragDrop({ onImport, disabled = false }: CSVDragDropProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -145,6 +157,7 @@ export default function CSVDragDrop({ onImport, disabled = false }: CSVDragDropP
     setError(null)
 
     const all: CursorUsageV2[] = []
+    const fileBatches: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }> = []
     let filesProcessed = 0
     let totalRows = 0
     let acceptedRows = 0
@@ -159,6 +172,7 @@ export default function CSVDragDrop({ onImport, disabled = false }: CSVDragDropP
       }
       console.log('📁 CSVDragDrop: Processing file:', file.name, 'size:', file.size)
       const text = await file.text()
+      const fileHash = await sha256Hex(text)
       console.log('📄 CSVDragDrop: File content length:', text.length, 'chars')
       const { headers, rows } = parseCsvText(text)
       console.log('🔍 CSVDragDrop: Parsed headers:', headers, 'rows:', rows.length)
@@ -193,6 +207,8 @@ export default function CSVDragDrop({ onImport, disabled = false }: CSVDragDropP
       filesProcessed += 1
       totalRows += rows.length
       console.log('✅ CSVDragDrop: File', file.name, 'passed validation, processing', rows.length, 'rows')
+
+      const perFile: CursorUsageV2[] = []
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
         const u = toUsage(row, { 
@@ -212,8 +228,25 @@ export default function CSVDragDrop({ onImport, disabled = false }: CSVDragDropP
           continue
         }
         all.push({ ...u, raw: undefined })
+        perFile.push({ ...u, raw: undefined })
         acceptedRows += 1
       }
+
+      // Deduplicate within the file for import-guard efficiency
+      const perFileSeen = new Set<string>()
+      const perFileDeduped: CursorUsageV2[] = []
+      for (const u of perFile) {
+        const key = `${u.timestamp}-${u.model}-${u.tokens}-${u.costUsd ?? 0}`
+        if (perFileSeen.has(key)) continue
+        perFileSeen.add(key)
+        perFileDeduped.push(u)
+      }
+
+      fileBatches.push({
+        fileName: file.name,
+        fileHash,
+        rows: perFileDeduped.sort((a, b) => a.timestamp - b.timestamp),
+      })
     }
 
     console.log('📊 CSVDragDrop: Processing complete. All rows:', all.length, 'accepted:', acceptedRows, 'skipped:', skippedRows)
@@ -245,7 +278,7 @@ export default function CSVDragDrop({ onImport, disabled = false }: CSVDragDropP
     }
 
     console.log('📤 CSVDragDrop: Calling onImport with', deduped.length, 'rows and summary:', summary)
-    onImport(deduped.sort((a, b) => a.timestamp - b.timestamp), summary)
+    onImport(deduped.sort((a, b) => a.timestamp - b.timestamp), summary, fileBatches)
     setIsParsing(false)
   }, [disabled, onImport])
 

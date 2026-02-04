@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, ComposedChart } from 'recharts'
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react'
+import { Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Line, ComposedChart } from 'recharts'
 import * as htmlToImage from 'html-to-image';
 import { CursorUsageV2 as CursorUsage } from '@shared'
 import { cn } from '@/lib/utils'
@@ -30,6 +30,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   const [aggregationMode, setAggregationMode] = useState<'day' | 'hour' | '15min'>('hour')
   const [metricMode, setMetricMode] = useState<'tokens' | 'costs'>('tokens')
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('last24h')
+  const [presetAnchorMs, setPresetAnchorMs] = useState<number | null>(null) // end of window for 1D/2D/1W/1M
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
   const [customStartTime, setCustomStartTime] = useState<string>('00:00')
@@ -150,17 +151,88 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     // Reset zoom when new data comes in
     setZoomRange(null)
 
-    // Always initialize to the file's full date range in Custom mode so user can edit both ends
-    setTimePeriod('custom')
+    // Anchor presets (1D/2D/1W/1M) to "now" by default.
+    // If the newest data is historical, the preset windows may be empty — we show that explicitly
+    // instead of snapping back to old data and confusing users.
+    setPresetAnchorMs(Date.now())
+
+    // Set a sensible default time period based on span.
+    // Users can still switch to Custom for exact bounds.
+    const defaultPeriod: TimePeriod =
+      dataSpanHours <= 48 ? 'last48h' :
+      dataSpanHours <= 24 * 30 ? 'last7d' :
+      'last30d'
+    setTimePeriod(defaultPeriod)
     setAggregationMode(dataSpanHours > 168 ? 'day' : dataSpanHours > 48 ? 'hour' : '15min')
 
+    // Pre-fill Custom with full data bounds (but do not force custom mode).
     setCustomStartDate(earliest.toISOString().split('T')[0])
     setCustomEndDate(latest.toISOString().split('T')[0])
     setCustomStartTime('00:00')
     setCustomEndTime('23:59')
-
     setDateRange({ from: earliest, to: latest })
-  }, [data.length, data]) // Trigger when data changes
+  }, [data.length]) // Only re-run when dataset size changes (avoid re-trigger loops)
+
+  const getPresetWindowMs = (period: TimePeriod): number => {
+    switch (period) {
+      case 'last24h': return 24 * 60 * 60 * 1000
+      case 'last48h': return 48 * 60 * 60 * 1000
+      case 'last7d': return 7 * 24 * 60 * 60 * 1000
+      case 'last30d': return 30 * 24 * 60 * 60 * 1000
+      default: return 0
+    }
+  }
+
+  const shiftPresetWindow = (direction: -1 | 1) => {
+    if (timePeriod === 'custom') return
+    if (data.length === 0) return
+    const { earliest } = getDataBoundaries()
+    const windowMs = getPresetWindowMs(timePeriod)
+    if (!windowMs) return
+
+    const maxAnchor = Date.now()
+    const current = presetAnchorMs ?? maxAnchor
+    const next = current + direction * windowMs
+
+    // Clamp anchor to available data range
+    const clamped = Math.max(earliest.getTime(), Math.min(maxAnchor, next))
+    setPresetAnchorMs(clamped)
+  }
+
+  const getActiveWindow = (): { startDate: Date | null; endDate: Date | null } => {
+    if (data.length === 0) return { startDate: null, endDate: null }
+
+    if (timePeriod === 'custom') {
+      let startDate: Date | null = null
+      let endDate: Date | null = null
+
+      if (customStartDate) {
+        if ((aggregationMode === 'hour' || aggregationMode === '15min') && customStartTime) {
+          startDate = new Date(customStartDate + 'T' + customStartTime + ':00')
+        } else {
+          startDate = new Date(customStartDate + 'T00:00:00')
+        }
+      }
+
+      if (customEndDate) {
+        if ((aggregationMode === 'hour' || aggregationMode === '15min') && customEndTime) {
+          endDate = new Date(customEndDate + 'T' + customEndTime + ':59')
+        } else {
+          endDate = new Date(customEndDate + 'T23:59:59')
+        }
+      }
+
+      return { startDate, endDate }
+    }
+
+    const windowMs = getPresetWindowMs(timePeriod)
+    if (!windowMs) return { startDate: null, endDate: null }
+
+    const endMs = presetAnchorMs ?? Date.now()
+    const endDate = new Date(endMs)
+    const startDate = new Date(endMs - windowMs)
+    return { startDate, endDate }
+  }
 
   // Handle date range picker changes with validation
   const handleDateRangeChange = (range: DateRange | undefined) => {
@@ -256,6 +328,11 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
         })
       }
     }
+
+    // For presets, anchor to now so 1M really means "last 30 days (relative to today)".
+    if (newPeriod !== 'custom') {
+      setPresetAnchorMs(Date.now())
+    }
   }
 
   // Quick preset functions for common time ranges
@@ -308,53 +385,8 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   // Filter data based on selected time period
   const getFilteredData = (): CursorUsage[] => {
     if (data.length === 0) return []
-    
-    const now = new Date()
-    let startDate: Date | null = null
-    let endDate: Date | null = null
 
-    switch (timePeriod) {
-      case 'last24h':
-        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-        // Set end date to end of today to include all real-time data
-        endDate = new Date()
-        endDate.setHours(23, 59, 59, 999)
-        break
-      case 'last48h':
-        startDate = new Date(now.getTime() - 48 * 60 * 60 * 1000)
-        // Set end date to end of today to include all real-time data
-        endDate = new Date()
-        endDate.setHours(23, 59, 59, 999)
-        break
-      case 'last7d':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        // Set end date to end of today to include all real-time data
-        endDate = new Date()
-        endDate.setHours(23, 59, 59, 999)
-        break
-      case 'last30d':
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        // Set end date to end of today to include all real-time data
-        endDate = new Date()
-        endDate.setHours(23, 59, 59, 999)
-        break
-      case 'custom':
-        if (customStartDate) {
-          if ((aggregationMode === 'hour' || aggregationMode === '15min') && customStartTime) {
-            startDate = new Date(customStartDate + 'T' + customStartTime + ':00')
-          } else {
-            startDate = new Date(customStartDate + 'T00:00:00')
-          }
-        }
-        if (customEndDate) {
-          if ((aggregationMode === 'hour' || aggregationMode === '15min') && customEndTime) {
-            endDate = new Date(customEndDate + 'T' + customEndTime + ':59')
-          } else {
-            endDate = new Date(customEndDate + 'T23:59:59')
-          }
-        }
-        break
-    }
+    const { startDate, endDate } = getActiveWindow()
 
     const filteredData = data.filter(usage => {
       const usageDate = (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date))
@@ -363,9 +395,10 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
       return true
     })
 
-    // If no data matches the filter, but we have data available, 
-    // return a minimal dataset to prevent chart from disappearing
-    if (filteredData.length === 0 && data.length > 0) {
+    // If no data matches the filter:
+    // - For presets (1D/2D/1W/1M): return [] so we can show an explicit "no data in this window" state.
+    // - For custom: keep the old fallback behavior to help users recover from out-of-bounds selection.
+    if (filteredData.length === 0 && data.length > 0 && timePeriod === 'custom') {
       console.log('No data in selected range, showing data boundaries instead')
       const { earliest, latest } = getDataBoundaries()
       
@@ -498,6 +531,50 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   }
 
   const chartData = processData()
+  const hasDataInWindow = chartData.length > 0
+
+  const activeWindowLabel = useMemo(() => {
+    const { startDate, endDate } = getActiveWindow()
+    if (!startDate || !endDate) return ''
+    const fmt: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+    return `${startDate.toLocaleDateString('en-US', fmt)} → ${endDate.toLocaleDateString('en-US', fmt)}`
+  }, [
+    timePeriod,
+    presetAnchorMs,
+    customStartDate,
+    customEndDate,
+    customStartTime,
+    customEndTime,
+    aggregationMode,
+    data.length,
+  ])
+
+  // Dynamic X-axis label density as data grows
+  const xAxisConfig = useMemo(() => {
+    const points = chartData.length
+    // Target a reasonable number of visible labels per aggregation level
+    const targetTicks =
+      aggregationMode === 'day' ? 14 :
+      aggregationMode === 'hour' ? 24 :
+      24 // 15min
+
+    const step = points > targetTicks ? Math.ceil(points / targetTicks) : 1
+    const interval = Math.max(0, step - 1) // Recharts: 0=every tick, 1=every other, etc.
+
+    // If we’re skipping lots of labels, don’t rotate them (cleaner).
+    const rotate = step <= 2
+
+    return {
+      interval,
+      angle: rotate ? -45 : 0,
+      height: rotate ? 80 : 32,
+      tickFontSize:
+        aggregationMode === 'hour' ? 10 :
+        aggregationMode === '15min' ? 8 :
+        12,
+      minTickGap: rotate ? 6 : 18,
+    }
+  }, [aggregationMode, chartData.length])
   
   // Get all unique models from the original data
   const allModels = Array.from(new Set(data.map(usage => usage.model)))
@@ -916,9 +993,8 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     setZoomRange(null)
   }
 
-  if (chartData.length === 0) {
-    return null
-  }
+  // Keep the UI visible even if there's no data in the selected window.
+  // (Avoids confusing "snapping" back to old data and makes it obvious the window is empty.)
 
   return (
     <>
@@ -949,18 +1025,51 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
               </span>
             )}
           </h3>
+          {activeWindowLabel && (
+            <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              <span className="font-medium">Showing:</span> {activeWindowLabel}
+            </div>
+          )}
         </div>
 
         {/* Right section for controls and copy button - responsive layout */}
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto md:flex-nowrap [@media(max-width:719px)]:flex-col [@media(max-width:719px)]:items-stretch">
           {/* Time Period Selector */}
-          <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 transition-colors duration-200 mb-1 md:mb-0 max-w-[150px]">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => shiftPresetWindow(-1)}
+              disabled={timePeriod === 'custom'}
+              className={cn(
+                "px-2 py-1 text-xs font-medium rounded transition-colors border",
+                timePeriod === 'custom'
+                  ? "opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400"
+                  : "border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600"
+              )}
+              title="Previous window"
+            >
+              ‹
+            </button>
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 transition-colors duration-200 mb-1 md:mb-0 max-w-[150px]">
             <button onClick={() => handleTimePeriodChange('last24h')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last24h' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>1D</button>
             <button onClick={() => handleTimePeriodChange('last48h')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last48h' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>2D</button>
             <button onClick={() => handleTimePeriodChange('last7d')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last7d' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>1W</button>
             <button onClick={() => handleTimePeriodChange('last30d')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last30d' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>1M</button>
             <button onClick={() => handleTimePeriodChange('custom')} className={cn("px-1 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'custom' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')} title="Custom Date Range">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            </button>
+            </div>
+            <button
+              onClick={() => shiftPresetWindow(1)}
+              disabled={timePeriod === 'custom'}
+              className={cn(
+                "px-2 py-1 text-xs font-medium rounded transition-colors border",
+                timePeriod === 'custom'
+                  ? "opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400"
+                  : "border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600"
+              )}
+              title="Next window"
+            >
+              ›
             </button>
           </div>
           {/* Metric Toggle */}
@@ -1100,9 +1209,21 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
 
       {/* Chart */}
       <div className="h-96 w-full" ref={chartRef} style={{ isolation: 'isolate' }}>
+        {!hasDataInWindow && (
+          <div className="h-full w-full flex items-center justify-center border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+            <div className="text-center px-6">
+              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                No data in this window
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                Your newest saved data looks historical. Use ‹ to page back, or switch to Custom.
+              </div>
+            </div>
+          </div>
+        )}
         {/* Chart container with event handling */}
         <div 
-          className="relative h-full"
+          className={cn("relative h-full", !hasDataInWindow && "hidden")}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -1125,15 +1246,15 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 bottom: 20, // Back to normal margin
               }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
               <XAxis 
                 dataKey="date" 
-                tick={{ fontSize: aggregationMode === 'hour' ? 10 : aggregationMode === '15min' ? 8 : 12, fill: '#6b7280' }}
-                angle={-45}
+                tick={{ fontSize: xAxisConfig.tickFontSize, fill: '#6b7280' }}
+                angle={xAxisConfig.angle}
                 textAnchor="end"
-                height={80}
+                height={xAxisConfig.height}
                 stroke="#9ca3af"
-                interval={aggregationMode === 'hour' ? 'preserveStartEnd' : aggregationMode === '15min' ? 'preserveStart' : 0}
+                interval={xAxisConfig.interval}
+                minTickGap={xAxisConfig.minTickGap}
               />
               <YAxis 
                 yAxisId="left"
