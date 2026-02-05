@@ -27,7 +27,7 @@ export default function FeaturesPage() {
                 Model Breakdown Analytics
               </h2>
               <p className="text-lg text-neutral-700 dark:text-sand-300 mb-6 leading-relaxed">
-                See exactly which AI models your team uses - Claude 4.5 Sonnet, GPT-5, Gemini, and more. Track usage patterns, costs per model, and identify which models deliver the best value.
+                See exactly which AI models your team uses - Claude 4.6 Opus, GPT-5.2, Gemini 3.0, and more. Track usage patterns, costs per model, and identify which models deliver the best value.
               </p>
               <ul className="space-y-3">
                 <li className="flex items-start gap-3">
@@ -40,7 +40,7 @@ export default function FeaturesPage() {
                   <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  <span className="text-neutral-700 dark:text-sand-300">Cost breakdown in USD and GBP</span>
+                  <span className="text-neutral-700 dark:text-sand-300">Cost breakdown in USD, EUR, GBP or your local currency.</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <svg className="w-5 h-5 text-accent-500 dark:text-accent-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,7 +262,7 @@ export default function FeaturesPage() {
       <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-primary-500 to-primary-600">
         <div className="container mx-auto max-w-4xl text-center">
           <h2 className="text-4xl font-bold text-secondary-900 mb-6">
-            Ready to Master Your AI Coding Tools?
+            Ready to Master AI Coding Tools?
           </h2>
           <p className="text-xl text-secondary-900/80 mb-8">
             Start tracking your team's usage today. Free forever for individual developers.

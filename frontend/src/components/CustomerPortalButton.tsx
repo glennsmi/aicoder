@@ -36,16 +36,6 @@ export default function CustomerPortalButton({
     try {
       setLoading(true)
 
-      // First, ensure user has a Stripe customer
-      const getOrCreateCustomer = httpsCallable(functions, 'getOrCreateStripeCustomer')
-      const customerResult = await getOrCreateCustomer()
-
-      if (!customerResult.data || !(customerResult.data as any).success) {
-        throw new Error('Failed to get or create Stripe customer')
-      }
-
-      console.log('Stripe customer:', (customerResult.data as any).customerId)
-
       // Create billing portal session
       const createPortalSession = httpsCallable(functions, 'createBillingPortalSession')
       const result = await createPortalSession({

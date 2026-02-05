@@ -72,6 +72,7 @@ export const addTeamMember = onCall(
         .doc(teamId)
         .update({
           members: FieldValue.arrayUnion(userId),
+          memberIds: FieldValue.arrayUnion(userId),
           updatedAt: FieldValue.serverTimestamp(),
         })
 
@@ -92,6 +93,7 @@ export const addTeamMember = onCall(
       }
     } catch (error: any) {
       console.error('Error adding team member:', error)
+      if (error instanceof HttpsError) throw error
       throw new HttpsError('internal', error.message || 'Failed to add team member')
     }
   }

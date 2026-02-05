@@ -329,7 +329,8 @@ export default function BillingPage() {
             pricing-table-id="prctbl_1SIXDRL6TuXGPgHwofLggk70"
             publishable-key="pk_live_51SIW2HL6TuXGPgHweNfizoiPnr9B71LQT6NW6DW2kvBRrNCaQId6c446qbsgNUt6kN0ayeDzwyjmH4Z4D66H7gCS00gW8CnEv1"
             customer-email={user?.email}
-            client-reference-id={user?.id}
+            // Always pass the user id; webhook will attach to org for org-billed plans.
+            client-reference-id={user?.id ? `user:${user.id}` : undefined}
           />
         </div>
       )}

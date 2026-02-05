@@ -14,7 +14,7 @@ Researched and documented API integration strategies for major AI coding assista
 ## ✅ Completed Items
 
 ### Documentation Created
-- [x] Created `/docs/API_INTEGRATIONS.md` - Comprehensive integration guide
+- [x] Created `/plans/docs/API_INTEGRATIONS.md` - Comprehensive integration guide
 - [x] Documented 6 major AI coding platforms
 - [x] Defined standard data format for usage tracking
 - [x] Outlined security and encryption strategy
@@ -327,9 +327,9 @@ Cost = estimatedTokens × averageTokenPrice
 ## 📚 Resources
 
 ### Documentation
-- `/docs/API_INTEGRATIONS.md` - Main integration guide
-- `/docs/cloud.md` - Cloud configuration
-- `/docs/DESIGN_SYSTEM.md` - UI components for connection UI
+- `/plans/docs/API_INTEGRATIONS.md` - Main integration guide
+- `/cloud.md` - Cloud configuration
+- `/plans/docs/DESIGN_SYSTEM.md` - UI components for connection UI
 
 ### Code Locations
 - `functions/src/connectors/` - Connector implementations
@@ -345,7 +345,7 @@ Cost = estimatedTokens × averageTokenPrice
 ---
 
 **Files Created:**
-- `/docs/API_INTEGRATIONS.md` - 400+ lines of comprehensive documentation
+- `/plans/docs/API_INTEGRATIONS.md` - 400+ lines of comprehensive documentation
 
 **Next Task Report:** After GitHub Copilot connector implementation
 

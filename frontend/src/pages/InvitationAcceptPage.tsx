@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 
 export default function InvitationAcceptPage() {
-  const { currentUser, loading } = useAuth()
+  const { currentUser, loading, logout } = useAuth()
   const { actualTheme } = useTheme()
   const [searchParams] = useSearchParams()
   const location = useLocation()
@@ -17,6 +17,13 @@ export default function InvitationAcceptPage() {
 
   const [status, setStatus] = useState<'idle' | 'accepting' | 'accepted' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+
+  const formatError = (e: any): string => {
+    const code = e?.code || e?.details?.code
+    const msg = e?.message || e?.details?.message || String(e)
+    if (code) return `${code}: ${msg}`
+    return msg
+  }
 
   const loginUrl = useMemo(() => {
     const redirect = encodeURIComponent(location.pathname + location.search)
@@ -36,7 +43,13 @@ export default function InvitationAcceptPage() {
 
       try {
         const fn = httpsCallable(functions, 'acceptInvitationByToken')
-        await fn({ invitationId, token })
+        const timeoutMs = 15000
+        await Promise.race([
+          fn({ invitationId, token }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timed out while accepting invitation. Please try again.')), timeoutMs)
+          ),
+        ])
 
         if (cancelled) return
         setStatus('accepted')
@@ -48,7 +61,7 @@ export default function InvitationAcceptPage() {
       } catch (e: any) {
         if (cancelled) return
         setStatus('error')
-        setError(e?.message || 'Failed to accept invitation')
+        setError(formatError(e) || 'Failed to accept invitation')
       }
     }
 
@@ -115,6 +128,9 @@ export default function InvitationAcceptPage() {
       <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl p-8">
         <img src={logoSrc} alt="AICoder.Guru" className="mx-auto h-16 mb-8" />
         <h1 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-2">Accepting invitation…</h1>
+        <p className="text-xs text-gunmetal-600 dark:text-gray-400 mb-4">
+          Signed in as <span className="font-medium">{currentUser.email || 'unknown email'}</span>
+        </p>
 
         {status === 'accepting' && (
           <div className="flex items-center gap-3 text-sm text-gunmetal-600 dark:text-gray-300">
@@ -131,12 +147,18 @@ export default function InvitationAcceptPage() {
           <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
             <p className="text-sm text-red-700 dark:text-red-300">{error || 'Failed to accept invitation'}</p>
             <div className="mt-4 flex gap-3">
-              <a
-                href={loginUrl}
+              <button
+                onClick={async () => {
+                  try {
+                    await logout()
+                  } finally {
+                    window.location.href = loginUrl
+                  }
+                }}
                 className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
               >
-                Try again
-              </a>
+                Sign out & try another email
+              </button>
               <a
                 href="/"
                 className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

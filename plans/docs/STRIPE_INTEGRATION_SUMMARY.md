@@ -251,7 +251,7 @@ Implement complete Stripe integration for AICoder.Guru to handle:
 - **Webhook URL:** `https://europe-west2-aicoder-guru.cloudfunctions.net/stripeWebhook`
 
 ### Documentation
-- Full plan: `docs/STRIPE_INTEGRATION_PLAN.md`
+- Full plan: `plans/docs/STRIPE_INTEGRATION_PLAN.md`
 - Webhook events: 20+ event types handled
 - API endpoints: 5+ Cloud Functions
 
@@ -278,7 +278,7 @@ Implement complete Stripe integration for AICoder.Guru to handle:
 
 ## 🚀 Next Actions
 
-1. **Review full plan:** `docs/STRIPE_INTEGRATION_PLAN.md`
+1. **Review full plan:** `plans/docs/STRIPE_INTEGRATION_PLAN.md`
 2. **Set up Stripe Dashboard:**
    - Create products for Individual, Team, Enterprise
    - Create monthly and annual prices

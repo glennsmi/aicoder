@@ -290,11 +290,11 @@ export function formatCost(cost: number): string {
 ### Phase 8: Update Documentation 📚
 
 **Files to update:**
-1. `docs/API_INTEGRATIONS.md`
+1. `plans/docs/API_INTEGRATIONS.md`
    - Update cost calculation examples
    - Update pricing model documentation
 
-2. `docs/task-reports/251015_2330_api_integrations_implementation.md`
+2. `plans/docs/task-reports/251015_2330_api_integrations_implementation.md`
    - Update pricing examples
 
 3. `README.md` (if exists)
@@ -438,8 +438,8 @@ Display: "$0.0019" or "~$0.002"
 10. 🔍 `frontend/src/hooks/useUserUsageData.ts` - Check calculations
 
 ### Documentation
-11. 📝 `docs/API_INTEGRATIONS.md`
-12. 📝 `docs/task-reports/251015_2330_api_integrations_implementation.md`
+11. 📝 `plans/docs/API_INTEGRATIONS.md`
+12. 📝 `plans/docs/task-reports/251015_2330_api_integrations_implementation.md`
 13. 📝 `claude.md` - Update development notes
 
 ---

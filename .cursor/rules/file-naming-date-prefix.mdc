@@ -1,0 +1,23 @@
+---
+description: Prefix new filenames with creation timestamp (YYMMDD_HHMM_)
+alwaysApply: true
+---
+
+# File naming: creation timestamp prefix
+
+When creating **any new file** in this repo, prefix the filename with the creation timestamp in:
+
+`YYMMDD_HHMM_`
+
+Use local time, 24-hour clock, zero-padded.
+
+## Examples
+
+- `260205_0930_PRD_New_Dashboard.md`
+- `260205_1415_addTeamMember.test.ts`
+- `260205_2210_orgUsageEvents.ts`
+
+## Notes
+
+- Do **not** rename existing files just to add a prefix.
+- If you create multiple files in the same minute, keep the same prefix for that batch.

@@ -26,9 +26,11 @@ export const stripeWebhook = onRequest(
   {
     region: 'europe-west2',
     cors: false,
+    invoker: 'public',
     memory: '256MiB',
     timeoutSeconds: 60,
-    secrets: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']
+    // These are injected from Google Secret Manager (per-function in Functions v2)
+    secrets: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'MAILER_SEND_KEY', 'MAIL_FROM_EMAIL']
   },
   async (req, res) => {
     if (req.method !== 'POST') {

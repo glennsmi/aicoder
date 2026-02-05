@@ -668,9 +668,9 @@ scroll-behavior: smooth  /* Enable smooth scrolling */
 - Tailwind Config: `/website/src/index.css`
 
 ### Documentation
-- Design System: `/docs/DESIGN_SYSTEM.md` (this file)
-- Hosting Strategy: `/docs/HOSTING_STRATEGY.md`
-- App Structure: `/docs/APP_STRUCTURE_RESTORED.md`
+- Design System: `/plans/docs/DESIGN_SYSTEM.md` (this file)
+- Hosting Strategy: `/plans/docs/HOSTING_STRATEGY.md`
+- App Structure: `/plans/docs/APP_STRUCTURE_RESTORED.md`
 
 ### External References
 - Tailwind CSS v4: https://tailwindcss.com

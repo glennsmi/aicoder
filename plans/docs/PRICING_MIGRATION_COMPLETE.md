@@ -148,8 +148,8 @@ calculateTokenCost(500_000, 500_000, 200_000, {
 4. ✅ `functions/src/connectors/AnthropicCodeConnector.ts` - 12 models (6 new)
 
 ### Documentation
-5. ✅ `docs/PRICING_MIGRATION_PLAN.md` - Implementation plan
-6. ✅ `docs/PRICING_MIGRATION_COMPLETE.md` - This document
+5. ✅ `plans/docs/PRICING_MIGRATION_PLAN.md` - Implementation plan
+6. ✅ `plans/docs/PRICING_MIGRATION_COMPLETE.md` - This document
 
 ---
 

@@ -69,11 +69,13 @@ aicoder/
 │       ├── types/      # TypeScript types
 │       └── schemas/    # Zod schemas
 │
-└── docs/               # Documentation
-    ├── FRONTEND_ARCHITECTURE.md
-    ├── API_INTEGRATIONS.md
-    ├── DESIGN_SYSTEM.md
-    └── task-reports/
+└── plans/              # Plans + documentation
+    ├── docs/
+    │   ├── FRONTEND_ARCHITECTURE.md
+    │   ├── API_INTEGRATIONS.md
+    │   ├── DESIGN_SYSTEM.md
+    │   └── task-reports/
+    └── task reports/
 ```
 
 ---
@@ -525,10 +527,10 @@ const date = timestamp instanceof Date
 ## 📚 Documentation
 
 ### Key Documents
-- **Frontend Architecture:** `docs/FRONTEND_ARCHITECTURE.md`
-- **API Integrations:** `docs/API_INTEGRATIONS.md`
-- **Design System:** `docs/DESIGN_SYSTEM.md`
-- **Deployment Guide:** `docs/DEPLOYMENT_GUIDE.md`
+- **Frontend Architecture:** `plans/docs/FRONTEND_ARCHITECTURE.md`
+- **API Integrations:** `plans/docs/API_INTEGRATIONS.md`
+- **Design System:** `plans/docs/DESIGN_SYSTEM.md`
+- **Deployment Guide:** `plans/docs/DEPLOYMENT_GUIDE.md`
 - **Multi-Tenant Plan:** `.cursor/plans/team-multi-fe283af8.plan.md`
 
 ### External Resources

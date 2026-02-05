@@ -15,7 +15,7 @@ Successfully implemented authentication guards, created a dedicated login page, 
 ## ✅ Completed Tasks
 
 ### 1. **Updated Design System Documentation**
-- **File:** `/docs/DESIGN_SYSTEM.md`
+- **File:** `/plans/docs/DESIGN_SYSTEM.md`
 - **Version:** 2.0 → 2.1
 - **Changes:**
   - Added App UI Theme section
@@ -23,7 +23,7 @@ Successfully implemented authentication guards, created a dedicated login page, 
   - Documented main content area colors for both modes
 
 ### 2. **Created Authentication & Pricing Documentation**
-- **File:** `/docs/AUTH_AND_PRICING.md`
+- **File:** `/plans/docs/AUTH_AND_PRICING.md`
 - **Content:**
   - Authentication flow requirements
   - Protected routes specification
@@ -63,7 +63,7 @@ Successfully implemented authentication guards, created a dedicated login page, 
   - Cleaned up unused state variables
 
 ### 6. **Linked Pricing Tiers with User Model**
-- **Documentation:** `/docs/AUTH_AND_PRICING.md`
+- **Documentation:** `/plans/docs/AUTH_AND_PRICING.md`
 - **Pricing Tiers Defined:**
   1. **Novice** (Free) - `free_individual`
   2. **Apprentice** ($10/mo) - `team` tier, 5 seats
@@ -188,11 +188,11 @@ All application routes now require authentication:
 
 ### Created
 - `/frontend/src/pages/LoginPage.tsx`
-- `/docs/AUTH_AND_PRICING.md`
-- `/docs/task-reports/251015_2300_auth_guards_and_pricing_integration.md`
+- `/plans/docs/AUTH_AND_PRICING.md`
+- `/plans/docs/task-reports/251015_2300_auth_guards_and_pricing_integration.md`
 
 ### Modified
-- `/docs/DESIGN_SYSTEM.md`
+- `/plans/docs/DESIGN_SYSTEM.md`
 - `/frontend/src/App.tsx`
 - `/frontend/src/components/Sidebar.tsx`
 - `/frontend/src/components/Layout.tsx`

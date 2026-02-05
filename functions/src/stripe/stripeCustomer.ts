@@ -118,7 +118,8 @@ export const createBillingPortalSession = onCall(
       console.log(`Creating billing portal session for user: ${auth.uid}`)
 
       // Get user data
-      const userDoc = await db.collection('users').doc(auth.uid).get()
+      const userDocRef = db.collection('users').doc(auth.uid)
+      const userDoc = await userDocRef.get()
 
       if (!userDoc.exists) {
         throw new HttpsError('not-found', 'User not found')
@@ -126,19 +127,52 @@ export const createBillingPortalSession = onCall(
 
       const userData = userDoc.data()!
 
-      // Check if user has a Stripe customer ID
-      if (!userData.stripeCustomerId) {
-        throw new HttpsError(
-          'failed-precondition',
-          'No Stripe customer found. Please create a customer first.'
-        )
+      const stripe = getStripeClient()
+
+      // Prefer organization-level billing for org admins
+      let customerId: string | null = null
+      let entityType: 'organization' | 'user' = 'user'
+
+      if (userData.organizationId && userData.currentRole === 'admin') {
+        const orgDoc = await db.collection('organizations').doc(String(userData.organizationId)).get()
+        const orgData = orgDoc.data() as any
+        if (orgDoc.exists && orgData?.stripeCustomerId) {
+          customerId = String(orgData.stripeCustomerId)
+          entityType = 'organization'
+        }
       }
 
-      const stripe = getStripeClient()
+      // Fall back to user-level customer
+      if (!customerId && userData.stripeCustomerId) {
+        customerId = String(userData.stripeCustomerId)
+        entityType = 'user'
+      }
+
+      // If still missing, create a user-level customer (keeps portal working for individual subscriptions)
+      if (!customerId) {
+        console.log(`No Stripe customer found; creating customer for user ${auth.uid}`)
+        const customer = await stripe.customers.create({
+          email: userData.email,
+          name: userData.displayName || undefined,
+          metadata: {
+            firebaseUserId: auth.uid,
+            organizationId: userData.organizationId || '',
+            tier: userData.tier || 'free_individual'
+          }
+        })
+
+        await userDocRef.update({
+          stripeCustomerId: customer.id,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        })
+
+        customerId = customer.id
+        entityType = 'user'
+      }
 
       // Create billing portal session
       const session = await stripe.billingPortal.sessions.create({
-        customer: userData.stripeCustomerId,
+        customer: customerId,
         return_url: `${returnUrl}/billing`
       })
 
@@ -146,7 +180,9 @@ export const createBillingPortalSession = onCall(
 
       return {
         success: true,
-        url: session.url
+        url: session.url,
+        customerId,
+        entityType
       }
     } catch (error: any) {
       console.error('Error creating billing portal session:', error)

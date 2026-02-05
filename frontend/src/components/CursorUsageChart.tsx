@@ -1999,21 +1999,21 @@ export default function CursorUsageChart({
                             >
                               <div className="font-semibold mb-2 text-blue-300">Input Token Details</div>
                               <div className="space-y-1">
-                                <div className="flex justify-between">
-                                  <span className="text-gray-300">Input Tokens:</span>
-                                  <span className="font-medium">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
+                                <div className="flex justify-between font-semibold">
+                                  <span className="text-gray-200">Input Tokens:</span>
+                                  <span className="font-medium text-gray-200">{row.inputTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="flex justify-between">
-                                  <span className="text-green-300">Output Tokens:</span>
-                                  <span className="font-medium text-green-300">{row.outputTokens.toLocaleString('en-US')}</span>
+                                <div className="flex justify-between pl-3">
+                                  <span className="text-gray-400">Non-cache:</span>
+                                  <span className="font-medium text-gray-300">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 font-semibold">
-                                  <span className="text-gray-200">I/O Subtotal:</span>
-                                  <span className="font-medium text-gray-200">{(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')}</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                                <div className="flex justify-between pl-3">
                                   <span className="text-orange-300">Cache Write:</span>
                                   <span className="font-medium text-orange-300">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                                  <span className="text-green-300">Output Tokens:</span>
+                                  <span className="font-medium text-green-300">{row.outputTokens.toLocaleString('en-US')}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-purple-300">Cache Read:</span>
@@ -2063,21 +2063,21 @@ export default function CursorUsageChart({
                             >
                               <div className="font-semibold mb-2 text-primary-300">Complete Breakdown</div>
                               <div className="space-y-1">
-                                <div className="flex justify-between text-blue-200">
+                                <div className="flex justify-between text-blue-200 font-semibold">
                                   <span>Input Tokens:</span>
-                                  <span className="font-medium">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
+                                  <span className="font-medium">{row.inputTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="flex justify-between text-green-200">
-                                  <span>Output Tokens:</span>
-                                  <span className="font-medium">{row.outputTokens.toLocaleString('en-US')}</span>
+                                <div className="flex justify-between pl-3 text-gray-400">
+                                  <span>Non-cache:</span>
+                                  <span className="font-medium text-gray-300">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-gray-200 font-semibold">
-                                  <span>I/O Subtotal:</span>
-                                  <span className="font-medium">{(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')}</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
+                                <div className="flex justify-between pl-3 text-orange-200">
                                   <span>Cache Write:</span>
                                   <span className="font-medium">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-green-200">
+                                  <span>Output Tokens:</span>
+                                  <span className="font-medium">{row.outputTokens.toLocaleString('en-US')}</span>
                                 </div>
                                 <div className="flex justify-between text-purple-200">
                                   <span>Cache Read:</span>
@@ -2087,9 +2087,6 @@ export default function CursorUsageChart({
                                   <span>Total:</span>
                                   <span>{row.totalTokens.toLocaleString('en-US')}</span>
                                 </div>
-                              </div>
-                              <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-700">
-                                💡 I/O: {(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')} | Cache Write: {row.inputWithCacheWriteTokens.toLocaleString('en-US')} | Cache Read: {row.cacheReadTokens.toLocaleString('en-US')}
                               </div>
                             </HoverPopover>
                           ) : (

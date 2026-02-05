@@ -10,7 +10,7 @@
 ## 📋 Changes Made
 
 ### 1. Documentation Setup
-- [x] Created `/docs/task-reports/` folder
+- [x] Created `/plans/docs/task-reports/` folder
 - [x] Created `cloud.md` for Cline tool access
 - [x] Created design system documentation
 - [x] Updated master plan with Stripe billing details
@@ -208,8 +208,8 @@ className="bg-accent-400 text-secondary-900"
 **Files Modified:**
 - `/frontend/src/index.css` - Complete color scheme update
 - `/frontend/public/logos/` - New logo assets
-- `/docs/cloud.md` - Created for Cline
-- `/docs/task-reports/` - Task tracking system
+- `/cloud.md` - Created for Cline
+- `/plans/docs/task-reports/` - Task tracking system
 
 **Next Task Report:** After Sidebar component color update
 

@@ -77,11 +77,17 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8">
         {/* Logo and Title */}
         <div className="text-center">
-          <img 
-            src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
-            alt="AICoder.Guru" 
-            className="mx-auto h-20 mb-16"
-          />
+          <a
+            href="https://aicoder.guru"
+            aria-label="Go to AICoder.Guru website"
+            className="inline-block focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 rounded"
+          >
+            <img
+              src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+              alt="AICoder.Guru"
+              className="mx-auto h-20 mb-16 hover:opacity-90 transition-opacity"
+            />
+          </a>
           <h2 className="text-3xl font-bold text-neutral-700 dark:text-white">
             {mode === 'signup' ? 'Create your account' : 'Sign in to your account'}
           </h2>
@@ -268,7 +274,13 @@ export default function LoginPage() {
         </div>
 
         {/* Theme Toggle */}
-        <div className="flex justify-center">
+        <div className="flex justify-center items-center gap-4">
+          <a
+            href="https://aicoder.guru"
+            className="text-sm text-neutral-500 dark:text-gray-400 hover:text-neutral-700 dark:hover:text-gray-200 hover:underline transition-colors"
+          >
+            Back to website
+          </a>
           <button
             onClick={() => setTheme(actualTheme === 'dark' ? 'light' : 'dark')}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

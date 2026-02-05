@@ -254,8 +254,8 @@ Once deployed, this implementation will:
 ## 📚 Documentation
 
 ### For Developers
-- `docs/API_INTEGRATIONS.md` - Comprehensive integration guide
-- `docs/task-reports/251015_2330_api_integrations_implementation.md` - Implementation details
+- `plans/docs/API_INTEGRATIONS.md` - Comprehensive integration guide
+- `plans/docs/task-reports/251015_2330_api_integrations_implementation.md` - Implementation details
 - Inline JSDoc comments in all connector files
 
 ### For Users

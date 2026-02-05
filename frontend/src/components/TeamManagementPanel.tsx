@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAuth } from '../contexts/AuthContext'
 import { Team } from '@shared'
+import { httpsCallable } from 'firebase/functions'
 import {
   arrayRemove,
   arrayUnion,
@@ -11,14 +12,14 @@ import {
   serverTimestamp,
   writeBatch,
 } from 'firebase/firestore'
-import { db } from '../config/firebaseApp'
+import { db, functions } from '../config/firebaseApp'
 
 interface TeamManagementPanelProps {
   onTeamCreated?: () => void
 }
 
 export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPanelProps) {
-  const { teams, members, canManageTeams, organization } = useOrganization()
+  const { teams, members, organization, currentRole, currentMember } = useOrganization()
   const { user, loading: authLoading } = useAuth()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
@@ -26,6 +27,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
   const [selectedManagerId, setSelectedManagerId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [removeLoadingUserId, setRemoveLoadingUserId] = useState<string | null>(null)
 
   const [openMenuTeamId, setOpenMenuTeamId] = useState<string | null>(null)
 
@@ -38,7 +40,15 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const canManage = canManageTeams()
+  const isAdmin = currentRole === 'admin'
+  const isTeamManager = currentRole === 'team_manager'
+  const canAccessPanel = isAdmin || isTeamManager
+
+  const canManageTeam = (team: Team | null) => {
+    if (!team) return false
+    if (isAdmin) return true
+    return Boolean(user?.id && team.managerId === user.id)
+  }
 
   useEffect(() => {
     if (!openMenuTeamId) return
@@ -143,7 +153,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
     }
   }
 
-  if (!canManage) {
+  if (!canAccessPanel) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500 dark:text-gray-400">
@@ -151,6 +161,55 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
         </p>
       </div>
     )
+  }
+
+  const visibleTeams = (() => {
+    if (isAdmin) return teams
+    const uid = user?.id
+    if (!uid) return []
+    const teamId = currentMember?.teamId
+    return teams.filter((t) => t.managerId === uid || (teamId ? t.id === teamId : false))
+  })()
+
+  const handleRemoveMember = async (team: Team, memberId: string) => {
+    if (!organization?.id) return
+    if (!user?.id) {
+      setActionError('You must be signed in to manage teams.')
+      return
+    }
+    if (!canManageTeam(team)) {
+      setActionError('Only the team manager or an admin can remove team members.')
+      return
+    }
+    if (memberId === team.managerId) {
+      setActionError('You can’t remove the team manager. Change manager first.')
+      return
+    }
+    if (memberId === user.id) {
+      setActionError('You can’t remove yourself from the team.')
+      return
+    }
+
+    const member = memberById.get(memberId)
+    const label = member?.displayName || member?.email || 'this member'
+    const confirmed = window.confirm(`Remove ${label} from ${team.name}?`)
+    if (!confirmed) return
+
+    setRemoveLoadingUserId(memberId)
+    setActionError(null)
+    try {
+      const fn = httpsCallable(functions, 'removeTeamMember')
+      await fn({
+        organizationId: organization.id,
+        teamId: team.id,
+        userId: memberId,
+      })
+    } catch (err: any) {
+      console.error('Error removing team member:', err)
+      setActionError(err?.message || 'Failed to remove team member.')
+    } finally {
+      setRemoveLoadingUserId(null)
+    }
   }
 
   const handleAddMembers = async () => {
@@ -272,19 +331,21 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
         <h2 className="text-2xl font-bold text-gunmetal-900 dark:text-white">
           Teams
         </h2>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Create Team
-        </button>
+        {isAdmin ? (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create Team
+          </button>
+        ) : null}
       </div>
 
       {/* Teams List */}
-      {teams.length === 0 ? (
+      {visibleTeams.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-xl p-12 text-center border border-gray-200 dark:border-gray-700">
           <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -293,18 +354,20 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
             No teams yet
           </h3>
           <p className="text-gray-500 dark:text-gray-400 mb-4">
-            Create your first team to organize your members
+            {isAdmin ? 'Create your first team to organize your members' : 'No teams assigned yet.'}
           </p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-6 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
-          >
-            Create Team
-          </button>
+          {isAdmin ? (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-6 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
+            >
+              Create Team
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {teams.map((team) => {
+          {visibleTeams.map((team) => {
             const teamMembers = members.filter(m => m.teamId === team.id)
             const manager = members.find(m => m.userId === team.managerId)
 
@@ -452,11 +515,15 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
             {(() => {
               const teamMembers = members.filter((m) => m.teamId === detailsTeam.id)
               const manager = members.find((m) => m.userId === detailsTeam.managerId)
-              const preview = teamMembers.slice(0, 8)
-              const remaining = Math.max(0, teamMembers.length - preview.length)
+              const canManageThisTeam = canManageTeam(detailsTeam)
 
               return (
                 <div className="space-y-4">
+                  {actionError && (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                       <div className="text-xs text-gunmetal-600 dark:text-gray-400">Members</div>
@@ -481,53 +548,75 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                         No members assigned yet.
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {preview.map((m) => (
-                          <div key={m.userId} className="flex items-center justify-between rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700/40">
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium text-gunmetal-900 dark:text-white truncate">
-                                {m.displayName || 'Unknown'}
+                      <div className="max-h-72 overflow-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+                        {teamMembers.map((m) => {
+                          const roleLabel =
+                            m.role === 'admin' ? 'Admin' : m.role === 'team_manager' ? 'Manager' : 'Member'
+                          const showRemove =
+                            canManageThisTeam &&
+                            m.userId !== detailsTeam.managerId &&
+                            m.userId !== user?.id
+
+                          return (
+                            <div
+                              key={m.userId}
+                              className="flex items-center justify-between gap-3 px-3 py-2 bg-gray-50 dark:bg-gray-700/40"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-gunmetal-900 dark:text-white truncate">
+                                  {m.displayName || 'Unknown'}
+                                </div>
+                                <div className="text-xs text-gunmetal-600 dark:text-gray-400 truncate">
+                                  {m.email}
+                                </div>
                               </div>
-                              <div className="text-xs text-gunmetal-600 dark:text-gray-400 truncate">
-                                {m.email}
+
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-xs text-gunmetal-600 dark:text-gray-400 whitespace-nowrap">
+                                  {roleLabel}
+                                </div>
+                                {showRemove ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveMember(detailsTeam, m.userId)}
+                                    disabled={removeLoadingUserId === m.userId}
+                                    className="text-xs font-medium text-red-700 dark:text-red-300 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {removeLoadingUserId === m.userId ? 'Removing…' : 'Remove'}
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
-                            <div className="text-xs text-gunmetal-600 dark:text-gray-400 ml-3 whitespace-nowrap">
-                              {m.role === 'admin' ? 'Admin' : m.role === 'team_manager' ? 'Manager' : 'Member'}
-                            </div>
-                          </div>
-                        ))}
-                        {remaining > 0 ? (
-                          <div className="text-xs text-gunmetal-600 dark:text-gray-400">
-                            +{remaining} more
-                          </div>
-                        ) : null}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDetailsTeam(null)
-                        openAddMembers(detailsTeam)
-                      }}
-                      className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
-                    >
-                      Add members
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDetailsTeam(null)
-                        openSetManager(detailsTeam)
-                      }}
-                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                      Change manager
-                    </button>
-                  </div>
+                  {canManageThisTeam ? (
+                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailsTeam(null)
+                          openAddMembers(detailsTeam)
+                        }}
+                        className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
+                      >
+                        Add members
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDetailsTeam(null)
+                          openSetManager(detailsTeam)
+                        }}
+                        className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Change manager
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               )
             })()}

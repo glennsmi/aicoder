@@ -81,10 +81,10 @@ Successfully completed the comprehensive branding update for the AICoder.Guru fr
 ## 📊 Files Changed
 
 ### Created (3 files)
-1. `docs/FRONTEND_ARCHITECTURE.md`
+1. `plans/docs/FRONTEND_ARCHITECTURE.md`
 2. `claude.md`
-3. `docs/task-reports/251015_2145_frontend_architecture_and_branding.md`
-4. `docs/task-reports/251015_2200_branding_cleanup_complete.md`
+3. `plans/docs/task-reports/251015_2145_frontend_architecture_and_branding.md`
+4. `plans/docs/task-reports/251015_2200_branding_cleanup_complete.md`
 
 ### Modified (5 files)
 1. `frontend/src/components/Sidebar.tsx`
@@ -273,12 +273,12 @@ Background (Sand):   #F2E8CF  /* Light mode */
 
 ## 📚 Documentation References
 
-- **Architecture:** `docs/FRONTEND_ARCHITECTURE.md`
+- **Architecture:** `plans/docs/FRONTEND_ARCHITECTURE.md`
 - **Claude Reference:** `claude.md`
-- **Design System:** `docs/DESIGN_SYSTEM.md`
-- **API Integrations:** `docs/API_INTEGRATIONS.md`
-- **Task Report 1:** `docs/task-reports/251015_2145_frontend_architecture_and_branding.md`
-- **Task Report 2:** `docs/task-reports/251015_2200_branding_cleanup_complete.md` (this file)
+- **Design System:** `plans/docs/DESIGN_SYSTEM.md`
+- **API Integrations:** `plans/docs/API_INTEGRATIONS.md`
+- **Task Report 1:** `plans/docs/task-reports/251015_2145_frontend_architecture_and_branding.md`
+- **Task Report 2:** `plans/docs/task-reports/251015_2200_branding_cleanup_complete.md` (this file)
 
 ---
 

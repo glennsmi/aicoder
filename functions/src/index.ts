@@ -13,15 +13,6 @@ setGlobalOptions({
 // Initialize Firebase Admin
 admin.initializeApp();
 
-// Check MailerSend API key
-const mailerSendKey = process.env.MAILER_SEND_KEY;
-if (!mailerSendKey) {
-  console.error('MAILER_SEND_KEY environment variable is not set');
-  console.log('For local development: Add MAILER_SEND_KEY to functions/.env');
-} else {
-  console.log('MailerSend initialized successfully');
-}
-
 // Debug function to check recent user documents
 export const debugUserCreation = onRequest(async (request, response) => {
   try {
@@ -62,7 +53,7 @@ export const testWelcomeEmail = onRequest(async (request, response) => {
     console.log(`Testing welcome email to ${testEmail} for ${testName} (${tier} tier)`);
 
     // Check if MailerSend is configured
-    if (!mailerSendKey) {
+    if (!process.env.MAILER_SEND_KEY) {
       response.status(500).json({ error: 'MailerSend API key not configured' });
       return;
     }
@@ -100,6 +91,7 @@ export const testWelcomeEmail = onRequest(async (request, response) => {
 // Import new Cloud Functions
 export { createTeam } from './teams/createTeam'
 export { addTeamMember } from './teams/addTeamMember'
+export { removeTeamMember } from './teams/260205_1650_removeTeamMember'
 export { createInvitation, resendInvitation, revokeInvitation, acceptInvitationByToken } from './invitations/invitations'
 export { testApiConnection, addApiConnection, syncApiConnection, scheduledApiSync } from './api/apiConnections'
 export { ingestUsageEventsFromCursorCsv } from './usage/ingestUsageEventsFromCursorCsv'
@@ -132,7 +124,7 @@ export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.us
     console.log(`Sending welcome email to ${email} for user ${uid}`);
 
     // Check if MailerSend is configured
-    if (!mailerSendKey) {
+    if (!process.env.MAILER_SEND_KEY) {
       console.error('MailerSend API key not configured. Email not sent.');
       return;
     }

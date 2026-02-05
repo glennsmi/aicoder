@@ -20,7 +20,11 @@ export default function UserManagementTable() {
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showPendingInvites, setShowPendingInvites] = useState(false)
 
-  const { invitations: pendingInvites, loading: pendingInvitesLoading } = useOrgInvitations(
+  const {
+    invitations: pendingInvites,
+    loading: pendingInvitesLoading,
+    error: pendingInvitesError,
+  } = useOrgInvitations(
     organizationId,
     'pending'
   )
@@ -133,6 +137,7 @@ export default function UserManagementTable() {
                 type="checkbox"
                 checked={showPendingInvites}
                 onChange={(e) => setShowPendingInvites(e.target.checked)}
+                className="h-4 w-4 accent-primary-500"
               />
               Show pending invites ({pendingInvites.length})
             </label>
@@ -186,6 +191,11 @@ export default function UserManagementTable() {
       {error && (
         <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      )}
+      {pendingInvitesError && (
+        <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-sm text-red-600 dark:text-red-400">{pendingInvitesError}</p>
         </div>
       )}
 

@@ -14,8 +14,8 @@ Setting up multi-tenant infrastructure and rebranding from Fueld to AICoder.Guru
 ## ✅ Completed Items
 
 ### Documentation
-- [x] Created `/docs/` folder structure
-- [x] Created `/docs/task-reports/` for task tracking
+- [x] Created `/plans/docs/` folder structure
+- [x] Created `/plans/docs/task-reports/` for task tracking
 - [x] Created `DESIGN_SYSTEM.md` - Complete branding guidelines
 - [x] Created `APP_STRUCTURE_RESTORED.md` - App architecture
 - [x] Created `HOSTING_STRATEGY.md` - Firebase multi-site hosting
@@ -100,8 +100,8 @@ Setting up multi-tenant infrastructure and rebranding from Fueld to AICoder.Guru
 
 ## 🔗 Related Files
 
-- `/docs/DESIGN_SYSTEM.md` - Branding guidelines
-- `/docs/APP_STRUCTURE_RESTORED.md` - App architecture
+- `/plans/docs/DESIGN_SYSTEM.md` - Branding guidelines
+- `/plans/docs/APP_STRUCTURE_RESTORED.md` - App architecture
 - `/.cursor/plans/team-multi-fe283af8.plan.md` - Master plan
 - `/frontend/src/App.tsx` - Main app routing
 - `/frontend/src/components/Sidebar.tsx` - Navigation

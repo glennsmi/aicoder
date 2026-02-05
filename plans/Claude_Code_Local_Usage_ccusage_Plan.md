@@ -289,7 +289,7 @@ Opt-in:
 ## Next Steps
 
 - Decide v1 granularity (daily aggregates recommended).
-- Add a sample `ccusage daily --json` fixture into `docs/` (redacted) for parser development.
+- Add a sample `ccusage daily --json` fixture into `plans/docs/` (redacted) for parser development.
 - Implement Phase 0 import UI + Firestore schema.
 - Draft agent pairing design (token scope, revocation, storage).
 
