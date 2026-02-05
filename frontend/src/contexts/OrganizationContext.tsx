@@ -9,15 +9,13 @@ import {
   canViewUserData,
   canManageUser,
   canAccessTeam as canAccessTeamUtil,
-} from '@cursor-costs/shared';
+} from '@shared';
 import { useAuth } from './AuthContext';
 import { 
   collection, 
   doc, 
   getDoc, 
   getDocs, 
-  query, 
-  where,
   onSnapshot,
   Unsubscribe 
 } from 'firebase/firestore';
@@ -130,8 +128,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
     try {
       setMembersLoading(true);
       const membersRef = collection(db, 'organizations', orgId, 'members');
-      const q = query(membersRef, where('status', '==', 'active'));
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(membersRef);
       
       const membersList = snapshot.docs.map(doc => ({
         userId: doc.id,
@@ -231,7 +228,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
 
       // Listen to member changes
       const membersUnsub = onSnapshot(
-        query(collection(db, 'organizations', orgId, 'members'), where('status', '==', 'active')),
+        collection(db, 'organizations', orgId, 'members'),
         (snapshot) => {
           const membersList = snapshot.docs.map(doc => ({
             userId: doc.id,

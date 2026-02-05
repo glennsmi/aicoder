@@ -1,18 +1,29 @@
 import { useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
 // import { OrganizationMember } from '@shared' // unused for now
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../config/firebaseApp'
+import { useOrgInvitations } from '../hooks/useOrgInvitations'
 
 export default function UserManagementTable() {
-  const { members, teams, canManageUsers } = useOrganization()
+  const { organization, members, teams, canManageUsers } = useOrganization()
+  const organizationId = organization?.id || null
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<'admin' | 'team_manager' | 'member'>('member')
   const [inviteTeamId, setInviteTeamId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [showPendingInvites, setShowPendingInvites] = useState(false)
+
+  const { invitations: pendingInvites, loading: pendingInvitesLoading } = useOrgInvitations(
+    organizationId,
+    'pending'
+  )
 
   const handleInviteUser = async () => {
     if (!inviteEmail.trim()) {
@@ -22,14 +33,27 @@ export default function UserManagementTable() {
 
     setLoading(true)
     setError(null)
+    setSuccess(null)
 
     try {
-      // TODO: Call Cloud Function to send invitation
-      console.log('Inviting user:', {
+      if (!organizationId) {
+        throw new Error('No organization selected')
+      }
+
+      const fn = httpsCallable(functions, 'createInvitation')
+      const res: any = await fn({
+        organizationId,
         email: inviteEmail,
         role: inviteRole,
-        teamId: inviteTeamId,
+        teamId: inviteTeamId || null,
       })
+
+      const url = res?.data?.invitationUrl as string | undefined
+      setSuccess(url ? 'Invitation sent. Link copied to clipboard.' : 'Invitation sent.')
+
+      if (url && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+      }
 
       setShowInviteModal(false)
       setInviteEmail('')
@@ -55,6 +79,38 @@ export default function UserManagementTable() {
     return matchesSearch && matchesRole && matchesStatus
   })
 
+  const buildInviteLink = (invitationId: string, token: string) => {
+    const base = window.location.origin.replace(/\/$/, '')
+    const params = new URLSearchParams({ invitationId, token })
+    return `${base}/invite?${params.toString()}`
+  }
+
+  const handleResendInvite = async (invitationId: string) => {
+    try {
+      setError(null)
+      setSuccess(null)
+      const fn = httpsCallable(functions, 'resendInvitation')
+      const res: any = await fn({ invitationId })
+      const url = res?.data?.invitationUrl as string | undefined
+      setSuccess(url ? 'Invitation resent. Link copied to clipboard.' : 'Invitation resent.')
+      if (url && navigator.clipboard?.writeText) await navigator.clipboard.writeText(url)
+    } catch (err: any) {
+      setError(err.message || 'Failed to resend invitation')
+    }
+  }
+
+  const handleRevokeInvite = async (invitationId: string) => {
+    try {
+      setError(null)
+      setSuccess(null)
+      const fn = httpsCallable(functions, 'revokeInvitation')
+      await fn({ invitationId })
+      setSuccess('Invitation deleted.')
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete invitation')
+    }
+  }
+
   if (!canManageUsers) {
     return (
       <div className="text-center py-12">
@@ -69,9 +125,20 @@ export default function UserManagementTable() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gunmetal-900 dark:text-white">
-          Members
-        </h2>
+        <div>
+          <h2 className="text-2xl font-bold text-gunmetal-900 dark:text-white">Members</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 text-sm text-gunmetal-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={showPendingInvites}
+                onChange={(e) => setShowPendingInvites(e.target.checked)}
+              />
+              Show pending invites ({pendingInvites.length})
+            </label>
+            {success && <span className="text-sm text-green-700 dark:text-green-300">{success}</span>}
+          </div>
+        </div>
         <button
           onClick={() => setShowInviteModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
@@ -115,6 +182,12 @@ export default function UserManagementTable() {
           <option value="suspended">Suspended</option>
         </select>
       </div>
+
+      {error && (
+        <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </div>
+      )}
 
       {/* Members Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -218,6 +291,103 @@ export default function UserManagementTable() {
         </div>
       </div>
 
+      {/* Pending Invites */}
+      {showPendingInvites && (
+        <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gunmetal-900 dark:text-white">Pending invites</h3>
+            {pendingInvitesLoading && (
+              <span className="text-sm text-gunmetal-600 dark:text-gray-300">Loading…</span>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gunmetal-600 dark:text-gray-300 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gunmetal-600 dark:text-gray-300 uppercase tracking-wider">
+                    Role
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gunmetal-600 dark:text-gray-300 uppercase tracking-wider">
+                    Team
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gunmetal-600 dark:text-gray-300 uppercase tracking-wider">
+                    Expires
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gunmetal-600 dark:text-gray-300 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {pendingInvites.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-10 text-center text-sm text-gunmetal-600 dark:text-gray-300">
+                      No pending invites
+                    </td>
+                  </tr>
+                ) : (
+                  pendingInvites.map((inv: any) => {
+                    const team = teams.find((t) => t.id === inv.teamId)
+                    const expires =
+                      inv.expiresAt?.toDate?.() instanceof Date
+                        ? inv.expiresAt.toDate()
+                        : inv.expiresAt instanceof Date
+                          ? inv.expiresAt
+                          : null
+
+                    const inviteLink = inv.token ? buildInviteLink(inv.id, inv.token) : null
+
+                    return (
+                      <tr key={inv.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                        <td className="px-6 py-4 text-sm text-gunmetal-900 dark:text-white">{inv.email}</td>
+                        <td className="px-6 py-4 text-sm text-gunmetal-600 dark:text-gray-300">{inv.role}</td>
+                        <td className="px-6 py-4 text-sm text-gunmetal-600 dark:text-gray-300">
+                          {team ? team.name : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gunmetal-600 dark:text-gray-300">
+                          {expires ? expires.toLocaleDateString() : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => handleResendInvite(inv.id)}
+                              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-primary-500 text-gunmetal-900 hover:bg-primary-600 transition-colors"
+                            >
+                              Resend
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!inviteLink) return
+                                await navigator.clipboard.writeText(inviteLink)
+                                setSuccess('Invite link copied to clipboard.')
+                              }}
+                              disabled={!inviteLink}
+                              className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                            >
+                              Copy link
+                            </button>
+                            <button
+                              onClick={() => handleRevokeInvite(inv.id)}
+                              className="px-3 py-1.5 text-sm font-medium rounded-lg border border-red-300 text-red-700 hover:bg-red-50 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Invite Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -288,6 +458,7 @@ export default function UserManagementTable() {
                   setInviteRole('member')
                   setInviteTeamId('')
                   setError(null)
+                  setSuccess(null)
                 }}
                 disabled={loading}
                 className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

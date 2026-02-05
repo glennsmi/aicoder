@@ -14,8 +14,8 @@ import AboutModal from '@/components/AboutModal'
 import { useCurrency } from '../hooks/useCurrency'
 import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
 import { httpsCallable } from 'firebase/functions'
-import { functions } from '../config/firebaseApp'
-import { getUserCursorUsageEventsV2 } from '@/lib/usageEvents'
+import { functions } from '@/config/firebaseApp'
+import { getUserAnySavedUsageV2 } from '@/lib/usageEvents'
 
 
 export default function CursorCostsPage() {
@@ -50,6 +50,7 @@ export default function CursorCostsPage() {
   const [tempDataV2, setTempDataV2] = useState<CursorUsageV2[]>([])
   const [isSavingUsageEvents, setIsSavingUsageEvents] = useState(false)
   const [isLoadingSavedEvents, setIsLoadingSavedEvents] = useState(false)
+  const [loadedSource, setLoadedSource] = useState<string | null>(null)
 
   // Show the uploaded tokens data immediately for both guests and logged-in users
   const displayDataV2 = tempDataV2
@@ -82,11 +83,20 @@ export default function CursorCostsPage() {
     if (!currentUser?.uid) return
     try {
       setIsLoadingSavedEvents(true)
+      // Prefer canonical `usageEvents`, but fall back to legacy collections if that's where the data lives.
+      // First, load a small sample to determine the latest timestamp and the source.
+      const latest = await getUserAnySavedUsageV2(currentUser.uid, { limitCount: 1 })
+      setLoadedSource(latest.source)
+      if (latest.rows.length === 0) return
+
+      const latestMs = typeof latest.rows[0]?.timestamp === 'number' ? latest.rows[0].timestamp : Date.now()
       const days = 365
-      const startMs = Date.now() - days * 24 * 60 * 60 * 1000
-      const events = await getUserCursorUsageEventsV2(currentUser.uid, { startMs })
-      if (events.length > 0) {
-        setTempDataV2(events)
+      const startMs = latestMs - days * 24 * 60 * 60 * 1000
+
+      const full = await getUserAnySavedUsageV2(currentUser.uid, { startMs, limitCount: 10000 })
+      setLoadedSource(full.source)
+      if (full.rows.length > 0) {
+        setTempDataV2(full.rows)
       }
     } catch (e) {
       console.error('Failed to load saved usage events:', e)
@@ -106,7 +116,7 @@ export default function CursorCostsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.uid])
 
-  // New: handle tokens-based CSV import (tokens-only flow)
+  // New: handle tokens-based Cursor CSV import (tokens-only flow)
 const handleTokensImport = async (
   rows: CursorUsageV2[],
   summary: CursorUsageImportSummary,
@@ -179,6 +189,70 @@ const handleTokensImport = async (
   
   console.log('✅ CursorCostsPage: tempDataV2 state updated, should trigger re-render')
 }
+
+  // New: handle Claude Code usage import via ccusage JSON (daily report)
+  const handleCcusageDailyImport = async (
+    rows: CursorUsageV2[],
+    summary: CursorUsageImportSummary,
+    fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+  ) => {
+    console.log('🎯 CursorCostsPage: handleCcusageDailyImport called with', rows.length, 'rows and summary:', summary)
+
+    // Show immediately
+    setTempDataV2(rows)
+
+    if (!currentUser) return
+
+    try {
+      setSaveResult(null)
+      clearError()
+      setPasteError(null)
+      setIsSavingUsageEvents(true)
+
+      const importId = `ccusage_daily_${Date.now()}`
+      const ingest = httpsCallable(functions, 'ingestUsageEventsFromCcusageDailyJson')
+      const chunkSize = 2000
+
+      let saved = 0
+      let duplicates = 0
+      const errors: string[] = []
+
+      void (async () => {
+        try {
+          const batches = (fileBatches && fileBatches.length > 0)
+            ? fileBatches
+            : [{ fileName: 'ccusage.json', fileHash: '', rows }]
+
+          for (const batch of batches) {
+            for (let i = 0; i < batch.rows.length; i += chunkSize) {
+              const chunk = batch.rows.slice(i, i + chunkSize)
+              const result = await ingest({
+                importId,
+                fileName: batch.fileName,
+                ...(batch.fileHash ? { fileHash: batch.fileHash } : {}),
+                rows: chunk,
+              })
+              const data = result.data as any
+              saved += Number(data?.saved || 0)
+              duplicates += Number(data?.duplicates || 0)
+            }
+          }
+
+          setSaveResult({ saved, duplicates, errors })
+          await loadSavedEvents()
+        } catch (e: any) {
+          console.error('Failed to ingest ccusage daily usage events:', e)
+          setPasteError(e?.message || 'Failed to save your Claude Code usage data. Please try again.')
+        } finally {
+          setIsSavingUsageEvents(false)
+        }
+      })()
+    } catch (e: any) {
+      console.error('Failed to ingest ccusage daily usage events:', e)
+      setPasteError(e?.message || 'Failed to save your Claude Code usage data. Please try again.')
+      setIsSavingUsageEvents(false)
+    }
+  }
 
   const handleClear = () => {
     if (currentUser) {
@@ -275,41 +349,46 @@ const handleTokensImport = async (
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-secondary-800 text-neutral-900 dark:text-gray-100 transition-colors duration-200">
       {/* Hero Section */}
-      <div className="bg-gray-50 dark:bg-secondary-800 p-4 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2 -mt-4">
-              <div className="flex flex-row items-center justify-between w-full">
-                <div className="flex flex-row items-center">
-                  {/* AICoder.Guru Logo - conditional based on theme */}
-                  <img 
-                    src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
-                    alt="AICoder.Guru - Measure. Motivate. Master AI."
-                    className="h-12 transition-opacity hover:opacity-90"
-                  />
-                </div>
-
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-20 max-w-3xl mx-auto">
-              <p className="text-xl text-neutral-900 dark:text-white/90 text-center sm:text-left">
-                Professional cost tracking for Cursor AI usage with smart data aggregation and analytics
+      <div className="bg-gray-50 dark:bg-secondary-800 transition-colors duration-200">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pb-10">
+          <div className="">
+            <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4">
+              <p className="text-xl text-neutral-900 dark:text-white/90 text-left max-w-3xl">
+                Measure. Motivate. Master AI.
               </p>
-              
+
+              {/* AICoder.Guru Logo - conditional based on theme */}
+              <img
+                src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+                alt="AICoder.Guru - Measure. Motivate. Master AI."
+                className="h-12 transition-opacity hover:opacity-90"
+              />
             </div>
-            
           </div>
         </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-2">
         
 
         {/* Stats Cards removed per latest UX – now moved to chart footer */}
 
         {/* Daily Usage Chart */}
+        {currentUser && isLoadingSavedEvents && displayDataV2.length === 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-colors duration-200">
+            <div className="flex items-center justify-center gap-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                Checking for saved usage…
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-center text-gray-500 dark:text-gray-400">
+              If data exists, your chart will appear automatically.
+            </div>
+          </div>
+        )}
         {displayDataV2.length > 0 && (
           <div ref={chartRef}>
-            <CursorUsageChart data={displayDataV2} isLoading={isPasting} />
+            <CursorUsageChart data={displayDataV2} isLoading={isPasting || isLoadingSavedEvents} />
           </div>
         )}
 
@@ -374,6 +453,7 @@ const handleTokensImport = async (
           
           <CSVImport 
             onTokensImport={handleTokensImport}
+            onCcusageDailyImport={handleCcusageDailyImport}
             onClear={handleClear}
             hasData={displayDataV2.length > 0}
             disabled={loading || isSavingUsageEvents}
@@ -400,6 +480,14 @@ const handleTokensImport = async (
               Loading saved usage…
             </div>
           )}
+
+          {/* Lightweight diagnostic to confirm we found saved data and where it came from */}
+          {currentUser && !isLoadingSavedEvents && !isSavingUsageEvents && displayDataV2.length === 0 && (
+            <div className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
+              No saved usage found for this signed-in account{loadedSource ? ` (checked: ${loadedSource}).` : '.'}
+            </div>
+          )}
+
         </div>
 
          {/* Guest Mode Notice - Below Chart */}

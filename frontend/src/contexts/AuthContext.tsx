@@ -21,13 +21,13 @@ import {
   collection, 
   where, 
   getDocs,
-  updateDoc,
   Timestamp,
   onSnapshot,
   Unsubscribe
 } from 'firebase/firestore'
-import { auth, db } from '../config/firebaseApp'
-import { User, Invitation, OrganizationRole } from '@cursor-costs/shared'
+import { auth, db, functions } from '../config/firebaseApp'
+import { User, Invitation, OrganizationRole } from '@shared'
+import { httpsCallable } from 'firebase/functions'
 
 interface AuthContextType {
   currentUser: FirebaseUser | null
@@ -181,36 +181,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error('This invitation has expired')
       }
 
-      console.log('✅ Invitation valid, joining organization:', invitation.organizationId)
+      if (!(invitation as any).token) {
+        throw new Error('This invitation link is missing a token. Ask your admin to resend the invitation.')
+      }
 
-      // Update user document to join the organization
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        organizationId: invitation.organizationId,
-        currentRole: invitation.role,
-        tier: 'team', // Default tier for org members
-        updatedAt: serverTimestamp(),
-      })
-
-      // Create member document in organization
-      await setDoc(doc(db, 'organizations', invitation.organizationId, 'members', currentUser.uid), {
-        userId: currentUser.uid,
-        email: currentUser.email,
-        displayName: currentUser.displayName || '',
-        role: invitation.role,
-        teamId: invitation.teamId || null,
-        invitedAt: invitation.createdAt,
-        joinedAt: serverTimestamp(),
-        status: 'active',
-        invitedBy: invitation.invitedBy,
-      })
-
-      // Update invitation status
-      await updateDoc(doc(db, 'invitations', invitationId), {
-        status: 'accepted',
-        acceptedBy: currentUser.uid,
-        acceptedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
+      console.log('✅ Invitation valid, accepting via Cloud Function:', invitation.organizationId)
+      const fn = httpsCallable(functions, 'acceptInvitationByToken')
+      await fn({ invitationId, token: (invitation as any).token })
 
       // Refresh user data
       const updatedUser = await fetchUserData(currentUser.uid)
@@ -302,35 +279,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // If there's a pending invitation, accept it during signup
       if (!inviteSnapshot.empty) {
-        const invitation = inviteSnapshot.docs[0].data() as Invitation
+        const invitationId = inviteSnapshot.docs[0].id
+        const invitation = inviteSnapshot.docs[0].data() as any as Invitation
         console.log('📨 Found pending invitation to organization:', invitation.organizationId)
         
         organizationId = invitation.organizationId
         userRole = invitation.role
         userTier = 'team'
 
-        // Create member document
-        await setDoc(doc(db, 'organizations', organizationId, 'members', userCredential.user.uid), {
-          userId: userCredential.user.uid,
-          email: email,
-          displayName: name || '',
-          role: invitation.role,
-          teamId: invitation.teamId || null,
-          invitedAt: invitation.createdAt,
-          joinedAt: serverTimestamp(),
-          status: 'active',
-          invitedBy: invitation.invitedBy,
-        })
+        if (!(invitation as any).token) {
+          throw new Error('Invitation is missing a token. Ask your admin to resend the invitation.')
+        }
 
-        // Mark invitation as accepted
-        await updateDoc(doc(db, 'invitations', inviteSnapshot.docs[0].id), {
-          status: 'accepted',
-          acceptedBy: userCredential.user.uid,
-          acceptedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-
-        console.log('✅ Automatically accepted invitation during signup')
+        console.log('✅ Accepting invitation via Cloud Function...')
+        const acceptFn = httpsCallable(functions, 'acceptInvitationByToken')
+        await acceptFn({ invitationId, token: (invitation as any).token })
       } else {
         // No invitation - create personal organization for free individual tier
         console.log('🏢 No invitation found, creating personal organization...')
@@ -419,33 +382,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         let userTier: 'free_individual' | 'paid_individual' | 'team' | 'enterprise' = 'free_individual'
 
         if (!inviteSnapshot.empty) {
-          const invitation = inviteSnapshot.docs[0].data() as Invitation
+          const invitationId = inviteSnapshot.docs[0].id
+          const invitation = inviteSnapshot.docs[0].data() as any as Invitation
           console.log('📨 Found pending invitation to organization:', invitation.organizationId)
           
           organizationId = invitation.organizationId
           userRole = invitation.role
           userTier = 'team'
 
-          // Create member document
-          await setDoc(doc(db, 'organizations', organizationId, 'members', result.user.uid), {
-            userId: result.user.uid,
-            email: result.user.email,
-            displayName: result.user.displayName || '',
-            role: invitation.role,
-            teamId: invitation.teamId || null,
-            invitedAt: invitation.createdAt,
-            joinedAt: serverTimestamp(),
-            status: 'active',
-            invitedBy: invitation.invitedBy,
-          })
+          if (!(invitation as any).token) {
+            throw new Error('Invitation is missing a token. Ask your admin to resend the invitation.')
+          }
 
-          // Mark invitation as accepted
-          await updateDoc(doc(db, 'invitations', inviteSnapshot.docs[0].id), {
-            status: 'accepted',
-            acceptedBy: result.user.uid,
-            acceptedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
+          console.log('✅ Accepting invitation via Cloud Function...')
+          const acceptFn = httpsCallable(functions, 'acceptInvitationByToken')
+          await acceptFn({ invitationId, token: (invitation as any).token })
         } else {
           // Create personal organization
           organizationId = await createPersonalOrganization(
@@ -585,33 +536,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         let userTier: 'free_individual' | 'paid_individual' | 'team' | 'enterprise' = 'free_individual'
 
         if (!inviteSnapshot.empty) {
-          const invitation = inviteSnapshot.docs[0].data() as Invitation
+          const invitationId = inviteSnapshot.docs[0].id
+          const invitation = inviteSnapshot.docs[0].data() as any as Invitation
           console.log('📨 Found pending invitation to organization:', invitation.organizationId)
           
           organizationId = invitation.organizationId
           userRole = invitation.role
           userTier = 'team'
 
-          // Create member document
-          await setDoc(doc(db, 'organizations', organizationId, 'members', result.user.uid), {
-            userId: result.user.uid,
-            email: email,
-            displayName: result.user.displayName || '',
-            role: invitation.role,
-            teamId: invitation.teamId || null,
-            invitedAt: invitation.createdAt,
-            joinedAt: serverTimestamp(),
-            status: 'active',
-            invitedBy: invitation.invitedBy,
-          })
+          if (!(invitation as any).token) {
+            throw new Error('Invitation is missing a token. Ask your admin to resend the invitation.')
+          }
 
-          // Mark invitation as accepted
-          await updateDoc(doc(db, 'invitations', inviteSnapshot.docs[0].id), {
-            status: 'accepted',
-            acceptedBy: result.user.uid,
-            acceptedAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          })
+          console.log('✅ Accepting invitation via Cloud Function...')
+          const acceptFn = httpsCallable(functions, 'acceptInvitationByToken')
+          await acceptFn({ invitationId, token: (invitation as any).token })
         } else {
           // Create personal organization
           organizationId = await createPersonalOrganization(

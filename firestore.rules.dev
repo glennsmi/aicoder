@@ -34,6 +34,13 @@ service cloud.firestore {
       match /usage/{usageId} {
         allow read, write: if isAuthenticated();
       }
+
+      // Org-scoped unified usage events (token-based)
+      match /usageEvents/{eventId} {
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+        allow write, create, update, delete: if false;
+      }
     }
     
     // ===== SUBSCRIPTIONS =====
@@ -43,7 +50,8 @@ service cloud.firestore {
     
     // ===== INVITATIONS =====
     match /invitations/{inviteId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow create, update, delete: if false;
     }
     
     // ===== USERS =====
@@ -67,6 +75,16 @@ service cloud.firestore {
       }
       
       match /cursorUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // ===== UNIFIED USAGE EVENTS (token-based, authoritative) =====
+      match /usageEvents/{eventId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // Import guard docs written by Functions (and optionally readable by client)
+      match /usageEventImports/{importId} {
         allow read, write, create, delete: if isUser(userId);
       }
     }

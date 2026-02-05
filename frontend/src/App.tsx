@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage'
 import CursorCostsPage from './pages/CursorCostsPage'
 import CompleteEmailSignInPage from './pages/CompleteEmailSignInPage'
 import CreateOrganizationPage from './pages/CreateOrganizationPage'
+import InvitationAcceptPage from './pages/InvitationAcceptPage'
 import DashboardPage from './pages/DashboardPage'
 import TeamsPage from './pages/TeamsPage'
 import UsersPage from './pages/UsersPage'
@@ -17,6 +18,7 @@ import APIConnectionsPage from './pages/APIConnectionsPage'
 import TeamDashboardPage from './pages/TeamDashboardPage'
 import TeamMembersPage from './pages/TeamMembersPage'
 import TeamOverviewPage from './pages/TeamOverviewPage'
+import OrganizationSettingsPage from './pages/OrganizationSettingsPage'
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -48,6 +50,7 @@ function App() {
                 {/* Public routes */}
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/auth/complete" element={<CompleteEmailSignInPage />} />
+                <Route path="/invite" element={<InvitationAcceptPage />} />
 
                 {/* Protected routes */}
                 <Route path="/" element={
@@ -78,6 +81,11 @@ function App() {
                 <Route path="/billing" element={
                   <ProtectedRoute>
                     <Layout><BillingPage /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/organization-settings" element={
+                  <ProtectedRoute>
+                    <Layout><OrganizationSettingsPage /></Layout>
                   </ProtectedRoute>
                 } />
                 <Route path="/api-connections" element={

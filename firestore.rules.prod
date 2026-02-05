@@ -112,6 +112,14 @@ service cloud.firestore {
         allow update, delete: if (isOrgMember(orgId) && resource.data.userId == request.auth.uid) ||
                                 isOrgAdmin(orgId);
       }
+
+      // ===== ORG-SCOPED UNIFIED USAGE EVENTS (token-based) =====
+      // Competitive visibility: all active org members can read.
+      // Writes are server-side only (Cloud Functions via Admin SDK).
+      match /usageEvents/{eventId} {
+        allow read: if isOrgMember(orgId);
+        allow create, update, delete: if false;
+      }
     }
     
     // ===== SUBSCRIPTIONS =====
@@ -128,23 +136,13 @@ service cloud.firestore {
     
     // ===== INVITATIONS =====
     match /invitations/{inviteId} {
-      // Read: The invited user (by email) or org admins
-      allow read: if isAuthenticated() && 
+      // Read: Invitee (by email) or org admins/team managers
+      allow read: if isAuthenticated() &&
                     (request.auth.token.email == resource.data.email ||
-                     isOrgAdmin(resource.data.organizationId));
-      
-      // Create: Org admins and team managers
-      allow create: if isAuthenticated() && 
-                      (isOrgAdmin(request.resource.data.organizationId) ||
-                       isOrgTeamManager(request.resource.data.organizationId));
-      
-      // Update: The invited user or org admin
-      allow update: if isAuthenticated() &&
-                      (request.auth.token.email == resource.data.email ||
-                       isOrgAdmin(resource.data.organizationId));
-      
-      // Delete: Org admin who sent it
-      allow delete: if isOrgAdmin(resource.data.organizationId);
+                     isOrgAdminOrManager(resource.data.organizationId));
+
+      // Writes are server-side only (Cloud Functions via Admin SDK)
+      allow create, update, delete: if false;
     }
     
     // ===== USERS =====
@@ -178,6 +176,16 @@ service cloud.firestore {
       }
       
       match /cursorUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // ===== UNIFIED USAGE EVENTS (token-based, authoritative) =====
+      match /usageEvents/{eventId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // Import guard docs written by Functions (and optionally readable by client)
+      match /usageEventImports/{importId} {
         allow read, write, create, delete: if isUser(userId);
       }
     }

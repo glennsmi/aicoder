@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useDeveloper } from '../contexts/DeveloperContext'
 import TierOverrideSelector from '../components/TierOverrideSelector'
 import CreateStripeCustomerButton from '../components/CreateStripeCustomerButton'
 import CustomerPortalButton from '../components/CustomerPortalButton'
-import { PRICING_TIERS } from '@cursor-costs/shared'
+import { PRICING_TIERS } from '@shared'
 
 // Define tier mapping based on Stripe integration plan
 const TIER_MAPPING = {
@@ -30,6 +31,7 @@ const TIER_DESCRIPTIONS = {
 } as const
 
 export default function BillingPage() {
+  const navigate = useNavigate()
   const { organization } = useOrganization()
   const { user } = useAuth()
   const { testMode } = useDeveloper()
@@ -129,6 +131,14 @@ export default function BillingPage() {
                 <p className="text-sm text-gunmetal-600 dark:text-gray-400 mt-1">
                   {organization ? `Organization: ${organization.name}` : 'Personal account'}
                 </p>
+                {organization && (
+                  <button
+                    onClick={() => navigate('/organization-settings')}
+                    className="mt-2 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                  >
+                    Organization settings
+                  </button>
+                )}
                 <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-1">
                   {TIER_DESCRIPTIONS[currentTier as keyof typeof TIER_DESCRIPTIONS]}
                 </p>

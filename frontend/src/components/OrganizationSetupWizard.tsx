@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { doc, setDoc, serverTimestamp, collection, addDoc } from 'firebase/firestore'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../config/firebaseApp'
-import { Organization, OrganizationTier } from '@cursor-costs/shared'
+import { Organization, OrganizationTier } from '@shared'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../config/firebaseApp'
 
 interface OrganizationSetupWizardProps {
   onComplete: (organizationId: string) => void
@@ -127,16 +129,12 @@ export default function OrganizationSetupWizard({ onComplete, onCancel }: Organi
       )
 
       for (const email of validEmails) {
-        await addDoc(collection(db, 'invitations'), {
+        const fn = httpsCallable(functions, 'createInvitation')
+        await fn({
           organizationId: orgId,
           email: email.trim().toLowerCase(),
           role: 'member',
           teamId: null,
-          status: 'pending',
-          invitedBy: currentUser.uid,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
         })
       }
 

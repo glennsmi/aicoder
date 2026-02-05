@@ -68,9 +68,9 @@ Compact reference of the Firestore structures we write/read.
 
 ## Aggregates (planned)
 
-### `users/{userId}/usageAggMinute/{bucketId}`
-### `organizations/{orgId}/usageAggMinute/{bucketId}`
-### `organizations/{orgId}/teams/{teamId}/usageAggMinute/{bucketId}`
+### `users/{userId}/usageAggHour/{bucketId}`
+### `organizations/{orgId}/usageAggHour/{bucketId}`
+### `organizations/{orgId}/teams/{teamId}/usageAggHour/{bucketId}`
 - **Purpose**: fast dashboards without scanning raw events.
 - **Status**: not implemented yet (documented in POD).
 

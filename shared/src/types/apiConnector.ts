@@ -8,6 +8,8 @@ export type AIProvider =
   | 'cursor'
   | 'github_copilot'
   | 'openai_codex'
+  | 'openai_admin_personal'
+  | 'openai_admin_org'
   | 'anthropic_usage'
   | 'anthropic_code'
   | 'claude_code'
@@ -247,7 +249,7 @@ export const EncryptedCredentialsSchema = z.object({
 export const APIConnectionSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
-  provider: z.enum(['cursor', 'github_copilot', 'openai_codex', 'anthropic_usage', 'anthropic_code', 'claude_code', 'google_cloud_billing', 'gemini', 'codeium', 'tabnine', 'replit_ghostwriter', 'aws_codewhisperer']),
+  provider: z.enum(['cursor', 'github_copilot', 'openai_codex', 'openai_admin_personal', 'openai_admin_org', 'anthropic_usage', 'anthropic_code', 'claude_code', 'google_cloud_billing', 'gemini', 'codeium', 'tabnine', 'replit_ghostwriter', 'aws_codewhisperer']),
   displayName: z.string().min(1).max(100),
   credentials: EncryptedCredentialsSchema,
   status: z.enum(['active', 'failed', 'paused', 'testing']),
@@ -264,7 +266,7 @@ export const SyncHistorySchema = z.object({
   id: z.string(),
   connectionId: z.string(),
   organizationId: z.string(),
-  provider: z.enum(['cursor', 'github_copilot', 'openai_codex', 'anthropic_usage', 'anthropic_code', 'claude_code', 'google_cloud_billing', 'gemini', 'codeium', 'tabnine', 'replit_ghostwriter', 'aws_codewhisperer']),
+  provider: z.enum(['cursor', 'github_copilot', 'openai_codex', 'openai_admin_personal', 'openai_admin_org', 'anthropic_usage', 'anthropic_code', 'claude_code', 'google_cloud_billing', 'gemini', 'codeium', 'tabnine', 'replit_ghostwriter', 'aws_codewhisperer']),
   startTime: z.any(), // Timestamp
   endTime: z.any().optional(), // Timestamp
   status: z.enum(['success', 'failed', 'partial', 'in_progress']),

@@ -100,8 +100,11 @@ export const testWelcomeEmail = onRequest(async (request, response) => {
 // Import new Cloud Functions
 export { createTeam } from './teams/createTeam'
 export { addTeamMember } from './teams/addTeamMember'
+export { createInvitation, resendInvitation, revokeInvitation, acceptInvitationByToken } from './invitations/invitations'
 export { testApiConnection, addApiConnection, syncApiConnection, scheduledApiSync } from './api/apiConnections'
 export { ingestUsageEventsFromCursorCsv } from './usage/ingestUsageEventsFromCursorCsv'
+export { ingestUsageEventsFromCcusageDailyJson } from './usage/ingestUsageEventsFromCcusageDailyJson'
+export { materializeOrgUsageEvents } from './usage/materializeOrgUsageEvents'
 export { refreshPricingCatalog } from './pricing/refreshPricingCatalog'
 
 // Export Stripe webhook

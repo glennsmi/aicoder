@@ -1,8 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAuth } from '../contexts/AuthContext'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '../config/firebase'
+import { Team } from '@shared'
+import {
+  arrayRemove,
+  arrayUnion,
+  collection,
+  addDoc,
+  doc,
+  serverTimestamp,
+  writeBatch,
+} from 'firebase/firestore'
+import { db } from '../config/firebaseApp'
 
 interface TeamManagementPanelProps {
   onTeamCreated?: () => void
@@ -10,7 +19,7 @@ interface TeamManagementPanelProps {
 
 export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPanelProps) {
   const { teams, members, canManageTeams, organization } = useOrganization()
-  const { user, currentUser, loading: authLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDescription, setNewTeamDescription] = useState('')
@@ -18,15 +27,52 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Debug authentication state
-  console.log('TeamManagementPanel auth state:', {
-    user: user?.id,
-    userEmail: user?.email,
-    currentUser: currentUser?.uid,
-    currentUserEmail: currentUser?.email,
-    authLoading,
-    organization: organization?.id
-  })
+  const [openMenuTeamId, setOpenMenuTeamId] = useState<string | null>(null)
+
+  const [detailsTeam, setDetailsTeam] = useState<Team | null>(null)
+  const [addMembersTeam, setAddMembersTeam] = useState<Team | null>(null)
+  const [setManagerTeam, setSetManagerTeam] = useState<Team | null>(null)
+  const [memberSearch, setMemberSearch] = useState('')
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set())
+  const [newManagerId, setNewManagerId] = useState('')
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const canManage = canManageTeams()
+
+  useEffect(() => {
+    if (!openMenuTeamId) return
+    const onDocClick = () => setOpenMenuTeamId(null)
+    document.addEventListener('click', onDocClick)
+    return () => document.removeEventListener('click', onDocClick)
+  }, [openMenuTeamId])
+
+  const memberById = useMemo(() => {
+    const map = new Map<string, typeof members[number]>()
+    for (const m of members) map.set(m.userId, m)
+    return map
+  }, [members])
+
+  const openDetails = (team: Team) => {
+    setOpenMenuTeamId(null)
+    setActionError(null)
+    setDetailsTeam(team)
+  }
+
+  const openAddMembers = (team: Team) => {
+    setOpenMenuTeamId(null)
+    setActionError(null)
+    setMemberSearch('')
+    setSelectedMemberIds(new Set())
+    setAddMembersTeam(team)
+  }
+
+  const openSetManager = (team: Team) => {
+    setOpenMenuTeamId(null)
+    setActionError(null)
+    setNewManagerId(team.managerId || '')
+    setSetManagerTeam(team)
+  }
 
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) {
@@ -69,6 +115,8 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
         description: newTeamDescription.trim() || '',
         managerId: selectedManagerId || user.id,
         memberIds: [],
+        // Back-compat with older server function field name
+        members: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }
@@ -95,7 +143,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
     }
   }
 
-  if (!canManageTeams) {
+  if (!canManage) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500 dark:text-gray-400">
@@ -103,6 +151,118 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
         </p>
       </div>
     )
+  }
+
+  const handleAddMembers = async () => {
+    if (!organization?.id || !addMembersTeam) return
+    if (!user?.id) {
+      setActionError('You must be signed in to manage teams.')
+      return
+    }
+    if (selectedMemberIds.size === 0) {
+      setActionError('Select at least one member to add.')
+      return
+    }
+
+    setActionLoading(true)
+    setActionError(null)
+    try {
+      const batch = writeBatch(db)
+      const teamRef = doc(db, 'organizations', organization.id, 'teams', addMembersTeam.id)
+
+      const memberIdsToAdd = Array.from(selectedMemberIds)
+
+      // Update team memberIds (and legacy "members") first
+      batch.update(teamRef, {
+        memberIds: arrayUnion(...memberIdsToAdd),
+        members: arrayUnion(...memberIdsToAdd),
+        updatedAt: serverTimestamp(),
+      })
+
+      // For each member, update their teamId; if they were assigned to another team, remove from that team too.
+      for (const memberId of memberIdsToAdd) {
+        const member = memberById.get(memberId)
+        const previousTeamId = member?.teamId
+
+        if (previousTeamId && previousTeamId !== addMembersTeam.id) {
+          const prevTeamRef = doc(db, 'organizations', organization.id, 'teams', previousTeamId)
+          batch.update(prevTeamRef, {
+            memberIds: arrayRemove(memberId),
+            members: arrayRemove(memberId),
+            updatedAt: serverTimestamp(),
+          })
+        }
+
+        const memberRef = doc(db, 'organizations', organization.id, 'members', memberId)
+        batch.update(memberRef, {
+          teamId: addMembersTeam.id,
+          updatedAt: serverTimestamp(),
+        })
+      }
+
+      await batch.commit()
+      setAddMembersTeam(null)
+      setSelectedMemberIds(new Set())
+    } catch (err: any) {
+      console.error('Error adding team members:', err)
+      setActionError(err?.message || 'Failed to add team members.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleSetManager = async () => {
+    if (!organization?.id || !setManagerTeam) return
+    if (!user?.id) {
+      setActionError('You must be signed in to manage teams.')
+      return
+    }
+    if (!newManagerId) {
+      setActionError('Select a manager.')
+      return
+    }
+
+    setActionLoading(true)
+    setActionError(null)
+    try {
+      const batch = writeBatch(db)
+      const teamRef = doc(db, 'organizations', organization.id, 'teams', setManagerTeam.id)
+
+      batch.update(teamRef, {
+        managerId: newManagerId,
+        updatedAt: serverTimestamp(),
+      })
+
+      // Promote selected manager to team_manager (unless admin) and bind to team
+      const newManager = memberById.get(newManagerId)
+      const newManagerRef = doc(db, 'organizations', organization.id, 'members', newManagerId)
+      batch.update(newManagerRef, {
+        teamId: setManagerTeam.id,
+        role: newManager?.role === 'admin' ? 'admin' : 'team_manager',
+        updatedAt: serverTimestamp(),
+      })
+
+      // If prior manager was a team_manager for this team, demote to member (keep teamId so they remain on team)
+      const prevManagerId = setManagerTeam.managerId
+      if (prevManagerId && prevManagerId !== newManagerId) {
+        const prev = memberById.get(prevManagerId)
+        if (prev?.role === 'team_manager' && prev.teamId === setManagerTeam.id) {
+          const prevRef = doc(db, 'organizations', organization.id, 'members', prevManagerId)
+          batch.update(prevRef, {
+            role: 'member',
+            updatedAt: serverTimestamp(),
+          })
+        }
+      }
+
+      await batch.commit()
+      setSetManagerTeam(null)
+    } catch (err: any) {
+      console.error('Error setting team manager:', err)
+      setActionError(err?.message || 'Failed to set team manager.')
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   return (
@@ -151,7 +311,13 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
             return (
               <div
                 key={team.id}
-                className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors"
+                role="button"
+                tabIndex={0}
+                onClick={() => openDetails(team)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') openDetails(team)
+                }}
+                className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -164,11 +330,50 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                       </p>
                     )}
                   </div>
-                  <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setOpenMenuTeamId((prev) => (prev === team.id ? null : team.id))
+                      }}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                      aria-label="Team actions"
+                      type="button"
+                    >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                     </svg>
-                  </button>
+                    </button>
+
+                    {openMenuTeamId === team.id && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-20"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => openDetails(team)}
+                          className="w-full text-left px-4 py-2 text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          View details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openAddMembers(team)}
+                          className="w-full text-left px-4 py-2 text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          Add team members
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSetManager(team)}
+                          className="w-full text-left px-4 py-2 text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          Set team manager
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -194,13 +399,317 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <button className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openDetails(team)
+                    }}
+                    className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
                     View Details
                   </button>
                 </div>
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Details Modal */}
+      {detailsTeam && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setDetailsTeam(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white">
+                  {detailsTeam.name}
+                </h3>
+                {detailsTeam.description ? (
+                  <p className="text-sm text-gunmetal-600 dark:text-gray-400 mt-1">
+                    {detailsTeam.description}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                onClick={() => setDetailsTeam(null)}
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {(() => {
+              const teamMembers = members.filter((m) => m.teamId === detailsTeam.id)
+              const manager = members.find((m) => m.userId === detailsTeam.managerId)
+              const preview = teamMembers.slice(0, 8)
+              const remaining = Math.max(0, teamMembers.length - preview.length)
+
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                      <div className="text-xs text-gunmetal-600 dark:text-gray-400">Members</div>
+                      <div className="text-lg font-semibold text-gunmetal-900 dark:text-white">
+                        {teamMembers.length}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                      <div className="text-xs text-gunmetal-600 dark:text-gray-400">Manager</div>
+                      <div className="text-sm font-medium text-gunmetal-900 dark:text-white mt-1">
+                        {manager ? (manager.displayName || manager.email) : 'Unassigned'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm font-medium text-gunmetal-900 dark:text-white mb-2">
+                      Team members
+                    </div>
+                    {teamMembers.length === 0 ? (
+                      <div className="text-sm text-gunmetal-600 dark:text-gray-400">
+                        No members assigned yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {preview.map((m) => (
+                          <div key={m.userId} className="flex items-center justify-between rounded-lg px-3 py-2 bg-gray-50 dark:bg-gray-700/40">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-gunmetal-900 dark:text-white truncate">
+                                {m.displayName || 'Unknown'}
+                              </div>
+                              <div className="text-xs text-gunmetal-600 dark:text-gray-400 truncate">
+                                {m.email}
+                              </div>
+                            </div>
+                            <div className="text-xs text-gunmetal-600 dark:text-gray-400 ml-3 whitespace-nowrap">
+                              {m.role === 'admin' ? 'Admin' : m.role === 'team_manager' ? 'Manager' : 'Member'}
+                            </div>
+                          </div>
+                        ))}
+                        {remaining > 0 ? (
+                          <div className="text-xs text-gunmetal-600 dark:text-gray-400">
+                            +{remaining} more
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailsTeam(null)
+                        openAddMembers(detailsTeam)
+                      }}
+                      className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors"
+                    >
+                      Add members
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailsTeam(null)
+                        openSetManager(detailsTeam)
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      Change manager
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Add Members Modal */}
+      {addMembersTeam && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setAddMembersTeam(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-1">
+              Add members to {addMembersTeam.name}
+            </h3>
+            <p className="text-sm text-gunmetal-600 dark:text-gray-400 mb-4">
+              Selected members will be assigned to this team.
+            </p>
+
+            {actionError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+              </div>
+            )}
+
+            <div className="mb-3">
+              <input
+                type="text"
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+                placeholder="Search members by name or email..."
+                className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gunmetal-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+
+            {(() => {
+              const eligible = members
+                .filter((m) => m.status === 'active')
+                .filter((m) => m.userId !== addMembersTeam.managerId)
+                .filter((m) => m.teamId !== addMembersTeam.id)
+                .filter((m) => {
+                  const q = memberSearch.trim().toLowerCase()
+                  if (!q) return true
+                  return (
+                    m.email.toLowerCase().includes(q) ||
+                    (m.displayName || '').toLowerCase().includes(q)
+                  )
+                })
+
+              return (
+                <div className="max-h-72 overflow-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+                  {eligible.length === 0 ? (
+                    <div className="p-4 text-sm text-gunmetal-600 dark:text-gray-400">
+                      No eligible members found.
+                    </div>
+                  ) : (
+                    eligible.map((m) => {
+                      const checked = selectedMemberIds.has(m.userId)
+                      return (
+                        <label
+                          key={m.userId}
+                          className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setSelectedMemberIds((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(m.userId)) next.delete(m.userId)
+                                else next.add(m.userId)
+                                return next
+                              })
+                            }}
+                            className="h-4 w-4 accent-primary-500"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gunmetal-900 dark:text-white truncate">
+                              {m.displayName || 'Unknown'}
+                            </div>
+                            <div className="text-xs text-gunmetal-600 dark:text-gray-400 truncate">
+                              {m.email}
+                              {m.teamId ? ` • currently in ${teams.find((t) => t.id === m.teamId)?.name || 'another team'}` : ''}
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })
+                  )}
+                </div>
+              )
+            })()}
+
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setAddMembersTeam(null)}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddMembers}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading ? 'Adding...' : 'Add members'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Manager Modal */}
+      {setManagerTeam && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setSetManagerTeam(null)}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-4">
+              Set manager for {setManagerTeam.name}
+            </h3>
+
+            {actionError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gunmetal-900 dark:text-white mb-2">
+                Team Manager
+              </label>
+              <select
+                value={newManagerId}
+                onChange={(e) => setNewManagerId(e.target.value)}
+                className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gunmetal-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">Select a manager</option>
+                {members
+                  .filter((m) => m.status === 'active')
+                  .map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.displayName || m.email}
+                    </option>
+                  ))}
+              </select>
+              <p className="mt-2 text-xs text-gunmetal-600 dark:text-gray-400">
+                The selected user will be promoted to <span className="font-medium">Team Manager</span> for this team (admins remain admins).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setSetManagerTeam(null)}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSetManager}
+                disabled={actionLoading || !newManagerId}
+                className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

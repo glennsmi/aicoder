@@ -1,6 +1,6 @@
 import { BaseConnector } from './BaseConnector'
 import { GitHubCopilotConnector } from './GitHubCopilotConnector'
-import { OpenAIConnector } from './OpenAIConnector'
+import { OpenAIConnector, OpenAIOrgAdminConnector, OpenAIPersonalAdminConnector } from './OpenAIConnector'
 import { AnthropicUsageConnector } from './AnthropicUsageConnector'
 import { AnthropicCodeConnector } from './AnthropicCodeConnector'
 import { GoogleCloudBillingConnector } from './GoogleCloudBillingConnector'
@@ -28,6 +28,12 @@ export class ConnectorFactory {
 
       case 'openai_codex':
         return new OpenAIConnector(credentials as OpenAICredentials)
+
+      case 'openai_admin_personal':
+        return new OpenAIPersonalAdminConnector(credentials as OpenAICredentials)
+
+      case 'openai_admin_org':
+        return new OpenAIOrgAdminConnector(credentials as OpenAICredentials)
 
       case 'anthropic_usage':
         return new AnthropicUsageConnector(credentials as AnthropicUsageCredentials)
@@ -61,6 +67,8 @@ export class ConnectorFactory {
     return [
       'github_copilot',
       'openai_codex',
+      'openai_admin_personal',
+      'openai_admin_org',
       'anthropic_usage',
       'anthropic_code',
       'claude_code',

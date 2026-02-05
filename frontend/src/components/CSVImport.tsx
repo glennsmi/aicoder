@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
 import CSVDragDrop from './CSVDragDrop'
+import CcusageJsonDrop from './CcusageJsonDrop'
 
 interface CSVImportProps {
   onClear?: () => void
@@ -11,9 +12,20 @@ interface CSVImportProps {
     summary: CursorUsageImportSummary,
     fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
   ) => void
+  onCcusageDailyImport?: (
+    data: CursorUsageV2[],
+    summary: CursorUsageImportSummary,
+    fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+  ) => void
 }
 
-export default function CSVImport({ onClear: _onClear, hasData: _hasData, disabled = false, onTokensImport }: CSVImportProps) {
+export default function CSVImport({
+  onClear: _onClear,
+  hasData: _hasData,
+  disabled = false,
+  onTokensImport,
+  onCcusageDailyImport,
+}: CSVImportProps) {
   const [error, _setError] = useState<string | null>(null)
 
   // Paste functionality removed – CSV upload is the primary input path now
@@ -34,16 +46,26 @@ export default function CSVImport({ onClear: _onClear, hasData: _hasData, disabl
 
   return (
     <>
-      {/* Upload CSV */}
-
-
-      {/* CSV Drag & Drop */}
-      <div className="mb-4">
+      {/* Cursor CSV Drag & Drop */}
+      <div className="mb-6">
         <CSVDragDrop
           disabled={disabled}
           onImport={(data, summary, fileBatches) => {
             console.log('📤 CSVImport: CSVDragDrop onImport called with', data.length, 'rows')
             handleTokensImport(data, summary, fileBatches)
+          }}
+        />
+      </div>
+
+      {/* Claude Code (ccusage) JSON */}
+      <div className="mb-4">
+        <CcusageJsonDrop
+          disabled={disabled}
+          onImport={(data, summary, fileBatches) => {
+            console.log('📤 CSVImport: CcusageJsonDrop onImport called with', data.length, 'rows')
+            if (onCcusageDailyImport) {
+              onCcusageDailyImport(data, summary, fileBatches)
+            }
           }}
         />
       </div>

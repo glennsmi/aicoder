@@ -3,14 +3,14 @@ import * as admin from 'firebase-admin'
 import crypto from 'node:crypto'
 import { CursorUsageV2, TokenBreakdown } from '../shared'
 
-type IngestCursorCsvRequest = {
+type IngestCcusageDailyRequest = {
   importId?: string
   fileName?: string
   fileHash?: string
   rows: CursorUsageV2[]
 }
 
-type IngestCursorCsvResponse = {
+type IngestCcusageDailyResponse = {
   importId: string
   saved: number
   duplicates: number
@@ -21,7 +21,6 @@ type IngestCursorCsvResponse = {
 
 function sha256Base64Url(input: string): string {
   const hash = crypto.createHash('sha256').update(input).digest('base64')
-  // base64url-ish (Firestore doc ids are fine with +/ but we keep it url-safe)
   return hash.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
@@ -30,8 +29,14 @@ function toDayUtc(eventAtMs: number): string {
 }
 
 function costUsdToMicros(costUsd: number): number {
-  // Avoid floats in storage; rounding is OK for micros.
   return Math.round(costUsd * 1_000_000)
+}
+
+function normalizeModelNameForDisplay(raw: string): string {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) return ''
+  // Prefix so charts can differentiate Cursor vs Claude Code usage.
+  return `claude_code/${trimmed}`
 }
 
 function extractTokens(row: CursorUsageV2): {
@@ -61,10 +66,11 @@ function extractTokens(row: CursorUsageV2): {
     input: inputWithCacheWrite + inputWithoutCacheWrite,
     output,
     cacheRead,
+    // In ccusage terminology this represents cache creation tokens (input-side).
     cacheWrite: inputWithCacheWrite,
     other: {
-      cursorInputWithCacheWrite: inputWithCacheWrite,
-      cursorInputWithoutCacheWrite: inputWithoutCacheWrite,
+      ccusageCacheCreationTokens: inputWithCacheWrite,
+      ccusageInputTokens: inputWithoutCacheWrite,
     },
   }
 }
@@ -90,7 +96,6 @@ function buildFingerprint(input: {
     input.cost.hasCost ? String(input.cost.amountMicros ?? 0) : 'no-cost',
   ]
 
-  // Include the "other" token buckets deterministically (sorted keys)
   if (input.tokens.other) {
     const keys = Object.keys(input.tokens.other).sort()
     for (const k of keys) {
@@ -101,15 +106,15 @@ function buildFingerprint(input: {
   return sha256Base64Url(parts.join('|'))
 }
 
-export const ingestUsageEventsFromCursorCsv = onCall(
+export const ingestUsageEventsFromCcusageDailyJson = onCall(
   { cors: true },
-  async (request): Promise<IngestCursorCsvResponse> => {
+  async (request): Promise<IngestCcusageDailyResponse> => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Authentication required')
     }
 
     const uid = request.auth.uid
-    const data = request.data as Partial<IngestCursorCsvRequest>
+    const data = request.data as Partial<IngestCcusageDailyRequest>
 
     if (!data || !Array.isArray(data.rows)) {
       throw new HttpsError('invalid-argument', 'rows[] is required')
@@ -120,23 +125,21 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       throw new HttpsError('invalid-argument', 'rows[] must not be empty')
     }
 
-    // Guardrail: avoid huge callable payloads by enforcing a chunk limit.
     if (rows.length > 5000) {
       throw new HttpsError('invalid-argument', 'Too many rows in one request; send in chunks')
     }
 
-    const importId = (data.importId && String(data.importId)) || `cursor_csv_${Date.now()}`
+    const importId = (data.importId && String(data.importId)) || `ccusage_daily_${Date.now()}`
     const fileName = data.fileName ? String(data.fileName) : undefined
     const fileHash = data.fileHash ? String(data.fileHash) : undefined
 
     const db = admin.firestore()
 
-    // File-hash import guard:
-    // If the exact same file (same sha256 hash) is uploaded again, skip ingest entirely.
-    // This avoids thousands of duplicate "already exists" writes.
+    // File-hash import guard (same pattern as Cursor CSV ingest)
     const nowMs = Date.now()
     const importGuardRef =
       fileHash ? db.collection('users').doc(uid).collection('usageEventImports').doc(fileHash) : null
+
     if (importGuardRef) {
       const guardResult = await db.runTransaction(async (tx) => {
         const snap = await tx.get(importGuardRef)
@@ -165,6 +168,8 @@ export const ingestUsageEventsFromCursorCsv = onCall(
             startedAtMs: nowMs,
             updatedAtMs: nowMs,
             rowCount: rows.length,
+            provider: 'claude_code',
+            sourceType: 'ccusage_daily_json',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true }
@@ -174,12 +179,7 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       })
 
       if (guardResult.skip) {
-        return {
-          importId,
-          saved: 0,
-          duplicates: rows.length,
-          models: [],
-        }
+        return { importId, saved: 0, duplicates: rows.length, models: [] }
       }
     }
 
@@ -214,15 +214,12 @@ export const ingestUsageEventsFromCursorCsv = onCall(
     const models = new Set<string>()
 
     bulkWriter.onWriteError((err) => {
-      // Continue on already-exists duplicates.
-      // Firestore Admin errors expose status as a number or string depending on environment.
       const status: any = (err as any).status || (err as any).code
       if (status === 6 || status === 'ALREADY_EXISTS' || status === 'already-exists') {
         duplicates += 1
         return true
       }
       console.error('BulkWriter error:', err)
-      // For non-duplicate errors, stop retrying and surface the failure.
       return false
     })
 
@@ -230,11 +227,12 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       const row = rows[i]
 
       const eventAtMs = Number(row.timestamp)
-      if (!Number.isFinite(eventAtMs) || eventAtMs <= 0) {
-        continue
-      }
+      if (!Number.isFinite(eventAtMs) || eventAtMs <= 0) continue
 
-      const modelName = String(row.model || '').trim()
+      const modelNameRaw = String(row.model || '').trim()
+      if (!modelNameRaw) continue
+
+      const modelName = normalizeModelNameForDisplay(modelNameRaw)
       if (!modelName) continue
 
       models.add(modelName)
@@ -245,8 +243,8 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       const costAmountMicros = costHasCost ? costUsdToMicros(row.costUsd as number) : undefined
 
       const fingerprint = buildFingerprint({
-        provider: 'cursor',
-        sourceType: 'csv',
+        provider: 'claude_code',
+        sourceType: 'ccusage_daily_json',
         eventAtMs,
         modelName,
         tokens,
@@ -254,17 +252,16 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       })
 
       const eventId = fingerprint
-
       const docRef = db.collection('users').doc(uid).collection('usageEvents').doc(eventId)
 
       const doc: Record<string, unknown> = {
         eventId,
         userId: uid,
-        provider: 'cursor',
-        sourceType: 'csv',
+        provider: 'claude_code',
+        sourceType: 'ccusage_daily_json',
         labels: {
           streamType: 'local_upload',
-          streamId: 'cursor_csv',
+          streamId: 'ccusage_daily_json',
         },
         eventAtMs,
         day: toDayUtc(eventAtMs),
@@ -282,7 +279,6 @@ export const ingestUsageEventsFromCursorCsv = onCall(
           rowIndex: i,
           fingerprint,
         },
-        // Server timestamp
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       }
 
@@ -297,12 +293,10 @@ export const ingestUsageEventsFromCursorCsv = onCall(
           if (maxEventAtMs === undefined || eventAtMs > maxEventAtMs) maxEventAtMs = eventAtMs
         })
         .catch((e) => {
-          // write errors are handled via onWriteError where possible
           console.error('Write failed:', e)
         })
 
       // Also materialize into org-scoped collection for org-wide analytics.
-      // Use a doc ID that includes the userId to avoid rare cross-user collisions.
       if (organizationId) {
         const orgEventId = `${uid}_${eventId}`
         const orgRef = db.collection('organizations').doc(organizationId).collection('usageEvents').doc(orgEventId)
@@ -318,7 +312,6 @@ export const ingestUsageEventsFromCursorCsv = onCall(
 
     await bulkWriter.close()
 
-    // Mark import guard complete (best effort)
     if (importGuardRef) {
       try {
         await importGuardRef.set(

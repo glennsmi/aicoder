@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { 
   AIProvider, 
@@ -8,12 +8,185 @@ import {
   AddConnectionRequest,
   SyncConnectionRequest,
   SyncResult
-} from '@cursor-costs/shared'
+} from '@shared'
 import { db } from '../config/firebase'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 
 const functions = getFunctions()
+
+const HelpDetails = ({
+  title,
+  children
+}: {
+  title: string
+  children: ReactNode
+}) => (
+  <details className="group rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+    <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between">
+      <span className="text-sm font-semibold text-neutral-900 dark:text-white">
+        {title}
+      </span>
+      <span className="text-xs text-neutral-500 dark:text-gray-400 group-open:hidden">Expand</span>
+      <span className="text-xs text-neutral-500 dark:text-gray-400 hidden group-open:inline">Collapse</span>
+    </summary>
+    <div className="px-4 pb-4 text-xs text-neutral-700 dark:text-gray-300 space-y-2">
+      {children}
+    </div>
+  </details>
+)
+
+const SetupHelpPanel = ({ provider }: { provider: AIProvider }) => {
+  const helpByProvider = (() => {
+    switch (provider) {
+      case 'openai_admin_personal':
+      case 'openai_admin_org':
+      case 'openai_codex':
+        return (
+          <div className="space-y-3">
+            <HelpDetails title="Create an OpenAI Admin API key">
+              <ol className="list-decimal pl-5 space-y-2">
+                <li>
+                  Go to the <span className="font-medium">OpenAI Platform</span> and open your <span className="font-medium">Organization settings</span>.
+                </li>
+                <li>
+                  Create an <span className="font-medium">Admin API key</span> (not a standard project key).
+                </li>
+                <li>
+                  Copy it and paste it into <span className="font-medium">Admin API Key</span>.
+                </li>
+              </ol>
+              <p className="text-neutral-600 dark:text-gray-400">
+                We use this key to read the organization Usage/Costs endpoints.
+              </p>
+            </HelpDetails>
+
+            <HelpDetails title="Personal vs Organization connector">
+              <ul className="list-disc pl-5 space-y-1">
+                <li>
+                  <span className="font-medium">Personal Admin Key</span>: pulls daily totals grouped by <span className="font-mono">model</span>.
+                </li>
+                <li>
+                  <span className="font-medium">Organization Admin Key</span>: pulls daily usage grouped by <span className="font-mono">user_id</span> + <span className="font-mono">api_key_id</span> + <span className="font-mono">model</span>.
+                </li>
+              </ul>
+              <p className="text-neutral-600 dark:text-gray-400">
+                Note: <span className="font-mono">user_id</span> is OpenAI’s user identifier. If you want friendly names/emails, we can add a mapping UI next.
+              </p>
+            </HelpDetails>
+
+            <HelpDetails title="Organization ID (optional)">
+              <p>
+                Only needed if you belong to multiple orgs and want to force the org context (looks like <span className="font-mono">org-...</span>).
+                Otherwise leave it blank.
+              </p>
+            </HelpDetails>
+          </div>
+        )
+
+      case 'anthropic_usage':
+      case 'anthropic_code':
+      case 'claude_code':
+        return (
+          <div className="space-y-3">
+            <HelpDetails title="Create an Anthropic API key">
+              <ol className="list-decimal pl-5 space-y-2">
+                <li>
+                  Open the <span className="font-medium">Anthropic Console</span>.
+                </li>
+                <li>
+                  Go to <span className="font-medium">Settings</span> → <span className="font-medium">API Keys</span>.
+                </li>
+                <li>
+                  Create a key, copy it, and paste it into <span className="font-medium">API Key</span>.
+                </li>
+              </ol>
+            </HelpDetails>
+
+            <HelpDetails title="Which connector should I use?">
+              <ul className="list-disc pl-5 space-y-1">
+                <li>
+                  <span className="font-medium">Claude (Usage)</span>: org-level usage &amp; costs (model/token totals).
+                </li>
+                <li>
+                  <span className="font-medium">Claude Code Analytics</span>: per-user coding productivity metrics.
+                </li>
+              </ul>
+            </HelpDetails>
+          </div>
+        )
+
+      case 'github_copilot':
+        return (
+          <div className="space-y-3">
+            <HelpDetails title="Create a GitHub PAT (Personal Access Token)">
+              <ol className="list-decimal pl-5 space-y-2">
+                <li>
+                  In GitHub, go to <span className="font-medium">Settings</span> → <span className="font-medium">Developer settings</span>.
+                </li>
+                <li>
+                  Create a <span className="font-medium">Personal Access Token</span> (fine-grained or classic).
+                </li>
+                <li>
+                  Ensure it can <span className="font-medium">read Copilot billing/usage</span> for your org (and enterprise if applicable).
+                </li>
+                <li>
+                  Copy it and paste into <span className="font-medium">Personal Access Token</span>.
+                </li>
+              </ol>
+            </HelpDetails>
+
+            <HelpDetails title="Organization vs Enterprise">
+              <p>
+                Enter your <span className="font-medium">org name</span> (e.g. <span className="font-mono">my-company</span>) or your <span className="font-medium">enterprise slug</span>.
+              </p>
+            </HelpDetails>
+          </div>
+        )
+
+      case 'cursor':
+        return (
+          <div className="space-y-3">
+            <HelpDetails title="Cursor has no public usage API">
+              <p>
+                Cursor usage is currently imported via CSV exports. There isn’t an official API connector available.
+              </p>
+              <p className="text-neutral-600 dark:text-gray-400">
+                Use the CSV upload flow in “My Usage”.
+              </p>
+            </HelpDetails>
+          </div>
+        )
+
+      default:
+        return (
+          <div className="space-y-3">
+            <HelpDetails title="Coming soon">
+              <p>
+                This connector isn’t available yet. When it is, we’ll add step-by-step setup instructions here.
+              </p>
+            </HelpDetails>
+          </div>
+        )
+    }
+  })()
+
+  if (!helpByProvider) return null
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
+        <h4 className="text-sm font-semibold text-neutral-900 dark:text-white">
+          Setup help (step-by-step)
+        </h4>
+        <p className="mt-1 text-xs text-neutral-600 dark:text-gray-400">
+          These steps walk you through finding the right credentials and completing setup.
+        </p>
+      </div>
+      {helpByProvider}
+    </div>
+  )
+}
 
 const AVAILABLE_PROVIDERS: { 
   id: AIProvider
@@ -22,6 +195,7 @@ const AVAILABLE_PROVIDERS: {
   icon: string
   requiresOrg?: boolean
   documentationUrl?: string
+  hidden?: boolean
 }[] = [
   {
     id: 'google_cloud_billing',
@@ -40,12 +214,30 @@ const AVAILABLE_PROVIDERS: {
     documentationUrl: 'https://docs.github.com/en/rest/copilot'
   },
   {
-    id: 'openai_codex',
-    name: 'OpenAI',
-    description: 'Monitor OpenAI API usage',
+    id: 'openai_admin_personal',
+    name: 'OpenAI (Personal Admin Key)',
+    description: 'Sync OpenAI API usage for a 1-person org (daily totals by model)',
     icon: '✨',
     requiresOrg: false,
-    documentationUrl: 'https://platform.openai.com/docs/api-reference'
+    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage'
+  },
+  {
+    id: 'openai_admin_org',
+    name: 'OpenAI (Organization Admin Key)',
+    description: 'Sync OpenAI org-wide API usage (breakdown by OpenAI user + API key + model)',
+    icon: '✨',
+    requiresOrg: false,
+    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage'
+  },
+  {
+    // Keep for existing connections; prefer the two new options above.
+    id: 'openai_codex',
+    name: 'OpenAI (Legacy)',
+    description: 'Deprecated — use the Personal or Organization admin key connectors instead',
+    icon: '✨',
+    requiresOrg: false,
+    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage',
+    hidden: true
   },
   {
     id: 'anthropic_usage',
@@ -272,6 +464,8 @@ export default function APIConnectionManager() {
         }
 
       case 'openai_codex':
+      case 'openai_admin_personal':
+      case 'openai_admin_org':
         return {
           apiKey: creds.apiKey,
           organizationId: creds.organizationId || undefined
@@ -305,7 +499,8 @@ export default function APIConnectionManager() {
     return [
       'google_cloud_billing',
       'github_copilot',
-      'openai_codex',
+      'openai_admin_personal',
+      'openai_admin_org',
       'anthropic_usage',
       'anthropic_code',
       'claude_code'
@@ -406,7 +601,7 @@ export default function APIConnectionManager() {
           Available Integrations
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {AVAILABLE_PROVIDERS.map((provider) => {
+          {AVAILABLE_PROVIDERS.filter(p => !p.hidden).map((provider) => {
             const isSupported = isProviderSupported(provider.id)
             const isAlreadyConnected = connections.some(c => c.provider === provider.id)
 
@@ -496,7 +691,7 @@ export default function APIConnectionManager() {
               </div>
             )}
 
-            <div className={`grid grid-cols-1 ${selectedProvider === 'google_cloud_billing' ? 'lg:grid-cols-2' : ''} gap-6`}>
+            <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6`}>
               {/* Left: form */}
               <div className="space-y-4">
                 <div>
@@ -631,19 +826,38 @@ export default function APIConnectionManager() {
                 ) : (
                   <div>
                     <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
-                      API Key *
+                      {(selectedProvider === 'openai_admin_personal' ||
+                        selectedProvider === 'openai_admin_org' ||
+                        selectedProvider === 'openai_codex')
+                        ? 'Admin API Key *'
+                        : 'API Key *'}
                     </label>
                     <input
                       type="password"
                       value={credentials.apiKey}
                       onChange={(e) => setCredentials({ ...credentials, apiKey: e.target.value })}
-                      placeholder="Enter your API key"
+                      placeholder={
+                        (selectedProvider === 'openai_admin_personal' ||
+                          selectedProvider === 'openai_admin_org' ||
+                          selectedProvider === 'openai_codex')
+                          ? 'sk-admin-...'
+                          : 'Enter your API key'
+                      }
                       className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
                     />
+                    {(selectedProvider === 'openai_admin_personal' ||
+                      selectedProvider === 'openai_admin_org' ||
+                      selectedProvider === 'openai_codex') && (
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-gray-400">
+                        This must be an <span className="font-medium">OpenAI Admin API key</span> to access org Usage/Costs endpoints.
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {selectedProvider === 'openai_codex' && (
+                {(selectedProvider === 'openai_admin_personal' ||
+                  selectedProvider === 'openai_admin_org' ||
+                  selectedProvider === 'openai_codex') && (
                   <div>
                     <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
                       Organization ID (Optional)
@@ -659,7 +873,12 @@ export default function APIConnectionManager() {
                 )}
               </div>
 
-              {/* Right: help accordions (only for GCP billing) */}
+              {/* Right: help accordions */}
+              {selectedProvider !== 'google_cloud_billing' && (
+                <SetupHelpPanel provider={selectedProvider} />
+              )}
+
+              {/* Right: help accordions (GCP billing has the detailed guide) */}
               {selectedProvider === 'google_cloud_billing' && (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">

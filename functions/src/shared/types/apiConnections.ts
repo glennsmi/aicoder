@@ -5,6 +5,8 @@ export type AIProvider =
   | 'cursor' 
   | 'github_copilot' 
   | 'openai_codex' 
+  | 'openai_admin_personal'
+  | 'openai_admin_org'
   | 'anthropic_usage'
   | 'anthropic_code'
   | 'claude_code' 

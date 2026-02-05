@@ -8,12 +8,15 @@ import {
 import axios, { AxiosInstance } from 'axios'
 
 /**
- * OpenAI API Connector
+ * OpenAI Admin Usage API Connector(s)
  * Docs: https://platform.openai.com/docs/api-reference
  */
-export class OpenAIConnector extends BaseConnector {
+class OpenAIUsageConnectorBase extends BaseConnector {
   private api: AxiosInstance
   private creds: OpenAICredentials
+  private groupBy: Array<
+    'project_id' | 'user_id' | 'api_key_id' | 'model' | 'batch' | 'service_tier'
+  >
 
   // OpenAI model pricing (per 1M tokens - industry standard)
   // Updated: October 2025 - Source: https://platform.openai.com/docs/pricing
@@ -77,9 +80,14 @@ export class OpenAIConnector extends BaseConnector {
     currency: 'USD'
   }
 
-  constructor(credentials: OpenAICredentials) {
-    super('openai_codex' as AIProvider, credentials)
+  constructor(
+    provider: AIProvider,
+    credentials: OpenAICredentials,
+    groupBy: OpenAIUsageConnectorBase['groupBy']
+  ) {
+    super(provider, credentials)
     this.creds = credentials
+    this.groupBy = groupBy
 
     // Initialize axios instance with auth
     this.api = axios.create({
@@ -126,71 +134,100 @@ export class OpenAIConnector extends BaseConnector {
     try {
       const usageData: UsageData[] = []
 
-      // Parse dates
-      const start = this.parseDate(startDate)
-      const end = this.parseDate(endDate)
+      const { startTimeSec, endTimeExclusiveSec } = this.toUnixRange(startDate, endDate)
 
-      // Fetch usage for each day in range
-      const currentDate = new Date(start)
-      while (currentDate <= end) {
-        const dateStr = this.formatDate(currentDate)
+      // Paginated, time-bucketed usage
+      let page: string | undefined = undefined
+      let hasMore = true
 
-        try {
-          // OpenAI usage endpoint format: /usage?date=YYYY-MM-DD
-          const response = await this.api.get('/usage', {
-            params: { date: dateStr }
-          })
+      while (hasMore) {
+        const params = new URLSearchParams()
+        params.set('start_time', String(startTimeSec))
+        params.set('end_time', String(endTimeExclusiveSec))
+        params.set('bucket_width', '1d')
+        for (const g of this.groupBy) params.append('group_by', g)
+        if (page) params.set('page', page)
 
-          const dailyUsage = response.data
-
-          if (dailyUsage && dailyUsage.data) {
-            // Process each model's usage for the day
-            for (const modelData of dailyUsage.data) {
-              const model = modelData.model || modelData.snapshot_id
-              const pricing = this.getPricingForModel(model)
-
-              // Calculate cost
-              const inputTokens = modelData.n_context_tokens_total || 0
-              const outputTokens = modelData.n_generated_tokens_total || 0
-              const totalTokens = inputTokens + outputTokens
-              const requests = modelData.n_requests || 0
-
-              const cost = this.calculateTokenCost(
-                inputTokens,
-                outputTokens,
-                0,
-                {
-                  inputPrice: pricing.input,
-                  outputPrice: pricing.output
-                }
-              )
-
-              usageData.push({
-                date: dateStr,
-                model,
-                provider: 'openai_codex',
-                inputTokens,
-                outputTokens,
-                totalTokens,
-                requests,
-                cost,
-                currency: OpenAIConnector.PRICING.currency,
-                metadata: {
-                  organizationId: this.creds.organizationId,
-                  contextTokens: modelData.n_context_tokens_total,
-                  generatedTokens: modelData.n_generated_tokens_total,
-                  cachedTokens: modelData.n_cached_tokens_total || 0
-                }
-              })
-            }
-          }
-        } catch (dayError) {
-          // Skip days with no data or errors
-          console.warn(`No usage data for ${dateStr}:`, dayError)
+        const response = await this.api.get('/organization/usage/completions', { params })
+        const payload = response.data as {
+          object: 'page'
+          data: Array<{
+            object: 'bucket'
+            start_time: number
+            end_time: number
+            results: Array<{
+              object: 'organization.usage.completions.result'
+              input_tokens: number
+              output_tokens: number
+              input_cached_tokens?: number
+              input_audio_tokens?: number
+              output_audio_tokens?: number
+              num_model_requests: number
+              project_id?: string | null
+              user_id?: string | null
+              api_key_id?: string | null
+              model?: string | null
+              batch?: boolean | null
+              service_tier?: string | null
+            }>
+          }>
+          has_more: boolean
+          next_page: string | null
         }
 
-        // Move to next day
-        currentDate.setDate(currentDate.getDate() + 1)
+        for (const bucket of payload.data || []) {
+          const date = new Date(bucket.start_time * 1000).toISOString().slice(0, 10)
+
+          for (const r of bucket.results || []) {
+            const model = r.model || 'all-models'
+            const pricing = this.getPricingForModel(model)
+
+            const inputTokensIncludingCached = r.input_tokens || 0
+            const cachedTokens = r.input_cached_tokens || 0
+            const uncachedInputTokens = Math.max(0, inputTokensIncludingCached - cachedTokens)
+            const outputTokens = r.output_tokens || 0
+            const totalTokens = uncachedInputTokens + cachedTokens + outputTokens
+
+            const cost = this.calculateTokenCost(
+              uncachedInputTokens,
+              outputTokens,
+              cachedTokens,
+              {
+                inputPrice: pricing.input,
+                outputPrice: pricing.output,
+                cachedPrice: pricing.cached
+              }
+            )
+
+            usageData.push({
+              date,
+              userId: r.user_id || undefined,
+              model,
+              provider: this.provider,
+              inputTokens: uncachedInputTokens,
+              outputTokens,
+              cachedTokens,
+              totalTokens,
+              requests: r.num_model_requests || 0,
+              cost,
+              currency: OpenAIUsageConnectorBase.PRICING.currency,
+              metadata: {
+                organizationId: this.creds.organizationId,
+                openaiProjectId: r.project_id ?? undefined,
+                openaiApiKeyId: r.api_key_id ?? undefined,
+                serviceTier: r.service_tier ?? undefined,
+                batch: r.batch ?? undefined,
+                // OpenAI reports input_tokens INCLUDING cached tokens; we split it for consistency.
+                openaiInputTokensIncludingCached: inputTokensIncludingCached,
+                inputAudioTokens: r.input_audio_tokens || 0,
+                outputAudioTokens: r.output_audio_tokens || 0
+              }
+            })
+          }
+        }
+
+        hasMore = !!payload.has_more
+        page = payload.next_page || undefined
       }
 
       return usageData
@@ -202,25 +239,75 @@ export class OpenAIConnector extends BaseConnector {
     }
   }
 
+  private toUnixRange(startDate: string, endDate: string): {
+    startTimeSec: number
+    endTimeExclusiveSec: number
+  } {
+    // Treat YYYY-MM-DD as UTC midnight boundaries.
+    const start = new Date(`${startDate}T00:00:00.000Z`)
+    const endInclusive = new Date(`${endDate}T00:00:00.000Z`)
+    const endExclusive = new Date(endInclusive)
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1)
+
+    return {
+      startTimeSec: Math.floor(start.getTime() / 1000),
+      endTimeExclusiveSec: Math.floor(endExclusive.getTime() / 1000)
+    }
+  }
+
   /**
    * Get pricing for a model, with fallback to default
    */
-  private getPricingForModel(model: string): { input: number; output: number } {
+  private getPricingForModel(model: string): { input: number; output: number; cached?: number } {
     // Try exact match
-    if (model in OpenAIConnector.PRICING) {
-      return OpenAIConnector.PRICING[model as keyof typeof OpenAIConnector.PRICING] as { input: number; output: number }
+    if (model in OpenAIUsageConnectorBase.PRICING) {
+      return OpenAIUsageConnectorBase.PRICING[model as keyof typeof OpenAIUsageConnectorBase.PRICING] as { input: number; output: number; cached?: number }
     }
 
     // Try prefix match
-    for (const [key, value] of Object.entries(OpenAIConnector.PRICING)) {
+    for (const [key, value] of Object.entries(OpenAIUsageConnectorBase.PRICING)) {
       if (model.startsWith(key) && typeof value === 'object' && 'input' in value) {
-        return value as { input: number; output: number }
+        return value as { input: number; output: number; cached?: number }
       }
     }
 
     // Default to GPT-4 pricing
     console.warn(`Unknown model ${model}, using GPT-4 pricing as fallback`)
-    return OpenAIConnector.PRICING['gpt-4']
+    return OpenAIUsageConnectorBase.PRICING['gpt-4']
+  }
+}
+
+/**
+ * Personal admin-key connector.
+ *
+ * Note: OpenAI’s reporting endpoints are organization-scoped; a “personal” account is usually
+ * a 1-person org. This connector pulls daily usage grouped by model only.
+ */
+export class OpenAIPersonalAdminConnector extends OpenAIUsageConnectorBase {
+  constructor(credentials: OpenAICredentials) {
+    super('openai_admin_personal' as AIProvider, credentials, ['model'])
+  }
+}
+
+/**
+ * Organization admin-key connector (multi-user).
+ *
+ * Pulls daily usage grouped by OpenAI user_id + api_key_id + model so we can attribute usage.
+ * Note: userId here is OpenAI’s user_id (external identifier).
+ */
+export class OpenAIOrgAdminConnector extends OpenAIUsageConnectorBase {
+  constructor(credentials: OpenAICredentials) {
+    super('openai_admin_org' as AIProvider, credentials, ['user_id', 'api_key_id', 'model'])
+  }
+}
+
+/**
+ * Backward-compatible provider id (legacy).
+ * Keep for any existing connections using `openai_codex`.
+ */
+export class OpenAIConnector extends OpenAIUsageConnectorBase {
+  constructor(credentials: OpenAICredentials) {
+    super('openai_codex' as AIProvider, credentials, ['user_id', 'api_key_id', 'model'])
   }
 }
 

@@ -255,12 +255,12 @@ Notes:
 ### Aggregations (optional but recommended)
 To support fast dashboards and cheap queries, store derived aggregates that can be queried directly by org/team/user.
 
-#### Per-user minute buckets
-`users/{userId}/usageAggMinute/{bucketId}`
+#### Per-user hourly buckets
+`users/{userId}/usageAggHour/{bucketId}`
 
 Fields:
 - day (YYYY-MM-DD)
-- minute (YYYY-MM-DD HH:mm)
+- hour (YYYY-MM-DD HH)
 - model.name
 - tokens.total
 - cost.amountMicros (sum; only for events with `hasCost=true`)
@@ -268,9 +268,9 @@ Fields:
 - eventCount
 - lastUpdated
 
-#### Org/team minute buckets
-`organizations/{orgId}/usageAggMinute/{bucketId}`
-`organizations/{orgId}/teams/{teamId}/usageAggMinute/{bucketId}` (team-level pre-aggregation)
+#### Org/team hourly buckets
+`organizations/{orgId}/usageAggHour/{bucketId}`
+`organizations/{orgId}/teams/{teamId}/usageAggHour/{bucketId}` (team-level pre-aggregation)
 
 This avoids collection-group scans over all users for dashboards.
 
@@ -343,9 +343,9 @@ In both cases:
 ### Option 1: On-create triggers (incremental)
 - Trigger on `users/{userId}/usageEvents/{eventId}` **create**
 - Update:
-  - per-user minute bucket
-  - org minute bucket
-  - team minute bucket (if team attribution exists)
+  - per-user hourly bucket
+  - org hourly bucket
+  - team hourly bucket (if team attribution exists)
 
 Pros:
 - near-real-time dashboards
@@ -409,7 +409,7 @@ Current persistence helpers are request/status-based (`CursorUsage`) and enhance
 
 We can keep the existing collections untouched and introduce:
 - `usageEvents`
-- `usageAggMinute`
+- `usageAggHour`
 - corresponding org/team aggregates
 
 ## Open Questions
@@ -461,5 +461,5 @@ This is the concrete build order to ship the unified pipeline end-to-end.
 ### Milestone 4: Provider API ingestion into the same event stream
 - [ ] **Connectors output**: Update OpenAI/Gemini/Claude connectors to emit `UsageEvent` + raw payload and ingest idempotently.
 - [ ] **Attribution**: Ensure every provider event is stamped with user/org/team.
-- [ ] **Aggregation**: Build org/team minute aggregates from `usageEvents` for fast dashboards.
+- [ ] **Aggregation**: Build org/team hourly aggregates from `usageEvents` for fast dashboards.
 

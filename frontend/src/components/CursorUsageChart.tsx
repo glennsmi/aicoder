@@ -1,5 +1,6 @@
-import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react'
-import { Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Line, ComposedChart } from 'recharts'
+import React, { useMemo, useState, useRef, useCallback, useEffect, useTransition } from 'react'
+import { createPortal } from 'react-dom'
+import { Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts'
 import * as htmlToImage from 'html-to-image';
 import { CursorUsageV2 as CursorUsage } from '@shared'
 import { cn } from '@/lib/utils'
@@ -9,27 +10,120 @@ import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import CurrencySelector from './CurrencySelector'
+import TimeRangeSegmentedControl from './TimeRangeSegmentedControl'
+import * as Popover from '@radix-ui/react-popover'
+import { aggregateCursorUsageV2ToHourlyByModel } from '@/lib/hourlyBuckets'
+
+const CORE_MODEL_COLORS = [
+  // Primary vibrant colors (base palette) - strategically ordered for maximum distinction
+  '#0097D7', // Blue
+  '#D70097', // Magenta/Pink
+  '#00D7AC', // Teal/Cyan
+  '#D7AC00', // Gold/Yellow
+  '#FF6B6B', // Red
+  '#4ECDC4', // Light Teal
+  '#45B7D1', // Light Blue
+  '#96CEB4', // Mint Green
+  '#FFC324', // Orange/Yellow
+  '#FFEAA7', // Pale Yellow
+  '#DDA0DD', // Plum
+  '#98D8C8', // Seafoam
+  '#F7DC6F', // Light Gold
+  '#BB8FCE', // Lavender
+  '#85C1E9', // Sky Blue
+  '#F8C471', // Peach
+  '#82E0AA', // Light Green
+  '#AED6F1', // Powder Blue
+  '#F1948A', // Salmon
+  '#D7BDE2', // Light Purple
+] as const
 
 interface CursorUsageChartProps {
   data: CursorUsage[]
   isLoading?: boolean
   costDifference?: number | null
   lastPastedDataCost?: number
+  /**
+   * Optional: notify parent when the chart's active time window changes.
+   * Useful for keeping leaderboards/other UI in sync with the chart.
+   */
+  onActiveWindowChange?: (window: { startMs: number | null; endMs: number | null }) => void
 }
 
 interface ChartData {
   date: string
   fullDate: Date
-  costPerMillionTokens: number
   [model: string]: string | number | Date
 }
 
-type TimePeriod = 'last24h' | 'last48h' | 'last7d' | 'last30d' | 'custom'
+type TimePeriod = 'last7d' | 'last14d' | 'last30d' | 'last3m' | 'custom'
+type PresetTimePeriod = Exclude<TimePeriod, 'custom'>
 
-export default function CursorUsageChart({ data, isLoading = false, costDifference, lastPastedDataCost }: CursorUsageChartProps) {
-  const [aggregationMode, setAggregationMode] = useState<'day' | 'hour' | '15min'>('hour')
+type HoverPopoverProps = {
+  trigger: React.ReactNode
+  children: React.ReactNode
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  align?: 'start' | 'center' | 'end'
+  sideOffset?: number
+  collisionPadding?: number
+  contentClassName?: string
+}
+
+function HoverPopover({
+  trigger,
+  children,
+  side = 'top',
+  align = 'end',
+  sideOffset = 8,
+  collisionPadding = 12,
+  contentClassName,
+}: HoverPopoverProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <span
+          className="inline-block"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+        >
+          {trigger}
+        </span>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side={side}
+          align={align}
+          sideOffset={sideOffset}
+          collisionPadding={collisionPadding}
+          className={cn(
+            'z-[100000] outline-none',
+            contentClassName,
+          )}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {children}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+export default function CursorUsageChart({
+  data,
+  isLoading = false,
+  costDifference,
+  lastPastedDataCost,
+  onActiveWindowChange,
+}: CursorUsageChartProps) {
+  // Smallest supported unit is hourly. Daily is derived from hourly.
+  const [aggregationMode, setAggregationMode] = useState<'day' | 'hour'>('hour')
   const [metricMode, setMetricMode] = useState<'tokens' | 'costs'>('tokens')
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>('last24h')
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('last7d')
   const [presetAnchorMs, setPresetAnchorMs] = useState<number | null>(null) // end of window for 1D/2D/1W/1M
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
@@ -47,16 +141,42 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   const { actualTheme } = useTheme()
   const [showCurrencySelectorModal, setShowCurrencySelectorModal] = useState(false)
   const [copiedMessage, setCopiedMessage] = useState<string>('')
-  const [highlightedModel, setHighlightedModel] = useState<string | null>(null)
-  const [showCostPerMillionLine, setShowCostPerMillionLine] = useState(false)
+  // Click-to-select model highlight (avoid hover updates for large datasets)
+  // We keep an "immediate UI selection" + a transitioned "chart selection" so the
+  // row highlight is instant even if the chart takes a moment to repaint.
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [selectedModelForChart, setSelectedModelForChart] = useState<string | null>(null)
+  const [isHighlightPending, startHighlightTransition] = useTransition()
+  const [referenceModel, setReferenceModel] = useState<string | null>(null)
 
-  // Functions to handle model highlighting
-  const highlightModel = (model: string) => {
-    setHighlightedModel(model)
+  // Crossfilter-inspired: shrink working set early (hour buckets by model).
+  const hourlyData = useMemo(() => aggregateCursorUsageV2ToHourlyByModel(data), [data])
+
+  type ModelBreakdownSortKey =
+    | 'model'
+    | 'inputTokens'
+    | 'cacheReadTokens'
+    | 'outputTokens'
+    | 'totalTokens'
+    | 'costUsd'
+    | 'costUserCurrency'
+    | 'costPerMillionInputTokensUsd'
+    | 'costPerMillionOutputTokensUsd'
+
+  const [modelBreakdownSortKey, setModelBreakdownSortKey] = useState<ModelBreakdownSortKey>('totalTokens')
+  const [modelBreakdownSortDir, setModelBreakdownSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const toggleSelectedModel = (model: string) => {
+    setSelectedModel((prev) => {
+      const next = prev === model ? null : model
+      startHighlightTransition(() => setSelectedModelForChart(next))
+      return next
+    })
   }
 
-  const unhighlightModel = () => {
-    setHighlightedModel(null)
+  const clearSelectedModel = () => {
+    setSelectedModel(null)
+    startHighlightTransition(() => setSelectedModelForChart(null))
   }
 
   const handleCopyChart = async () => {
@@ -117,33 +237,18 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
 
   // Get data boundaries for validation
   const getDataBoundaries = () => {
-    if (data.length === 0) return { earliest: new Date(), latest: new Date() }
+    if (hourlyData.length === 0) return { earliest: new Date(), latest: new Date() }
     
-    const dates = data.map(usage => (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date)))
+    const dates = hourlyData.map(usage => new Date((usage as any).timestamp))
     const earliest = new Date(Math.min(...dates.map(d => d.getTime())))
     const latest = new Date(Math.max(...dates.map(d => d.getTime())))
     
     return { earliest, latest }
   }
 
-  // Parse the date format "May 24, 2025, 01:50 PM"
-  const parseDateTime = (dateStr: string): Date => {
-    try {
-      const parsed = new Date(dateStr)
-      if (isNaN(parsed.getTime())) {
-        console.warn('Invalid date parsed:', dateStr)
-        return new Date()
-      }
-      return parsed
-    } catch (error) {
-      console.warn('Could not parse date:', dateStr, error)
-      return new Date()
-    }
-  }
-
   // Auto-adjust chart settings when new data is imported
   useEffect(() => {
-    if (data.length === 0) return
+    if (hourlyData.length === 0) return
 
     const { earliest, latest } = getDataBoundaries()
     const dataSpanHours = (latest.getTime() - earliest.getTime()) / (1000 * 60 * 60)
@@ -151,19 +256,19 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     // Reset zoom when new data comes in
     setZoomRange(null)
 
-    // Anchor presets (1D/2D/1W/1M) to "now" by default.
-    // If the newest data is historical, the preset windows may be empty — we show that explicitly
-    // instead of snapping back to old data and confusing users.
-    setPresetAnchorMs(Date.now())
+    // Anchor presets (1D/2D/1W/1M) to the most recent data point (clamped to now).
+    // This ensures saved historical datasets still show up immediately on load.
+    setPresetAnchorMs(Math.min(Date.now(), latest.getTime()))
 
     // Set a sensible default time period based on span.
     // Users can still switch to Custom for exact bounds.
     const defaultPeriod: TimePeriod =
-      dataSpanHours <= 48 ? 'last48h' :
-      dataSpanHours <= 24 * 30 ? 'last7d' :
-      'last30d'
+      dataSpanHours <= 24 * 7 ? 'last7d' :
+      dataSpanHours <= 24 * 14 ? 'last14d' :
+      dataSpanHours <= 24 * 30 ? 'last30d' :
+      'last3m'
     setTimePeriod(defaultPeriod)
-    setAggregationMode(dataSpanHours > 168 ? 'day' : dataSpanHours > 48 ? 'hour' : '15min')
+    setAggregationMode(dataSpanHours > 168 ? 'day' : 'hour')
 
     // Pre-fill Custom with full data bounds (but do not force custom mode).
     setCustomStartDate(earliest.toISOString().split('T')[0])
@@ -171,21 +276,21 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     setCustomStartTime('00:00')
     setCustomEndTime('23:59')
     setDateRange({ from: earliest, to: latest })
-  }, [data.length]) // Only re-run when dataset size changes (avoid re-trigger loops)
+  }, [hourlyData.length]) // Only re-run when dataset size changes (avoid re-trigger loops)
 
   const getPresetWindowMs = (period: TimePeriod): number => {
     switch (period) {
-      case 'last24h': return 24 * 60 * 60 * 1000
-      case 'last48h': return 48 * 60 * 60 * 1000
       case 'last7d': return 7 * 24 * 60 * 60 * 1000
+      case 'last14d': return 14 * 24 * 60 * 60 * 1000
       case 'last30d': return 30 * 24 * 60 * 60 * 1000
+      case 'last3m': return 90 * 24 * 60 * 60 * 1000
       default: return 0
     }
   }
 
   const shiftPresetWindow = (direction: -1 | 1) => {
     if (timePeriod === 'custom') return
-    if (data.length === 0) return
+    if (hourlyData.length === 0) return
     const { earliest } = getDataBoundaries()
     const windowMs = getPresetWindowMs(timePeriod)
     if (!windowMs) return
@@ -200,14 +305,14 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   }
 
   const getActiveWindow = (): { startDate: Date | null; endDate: Date | null } => {
-    if (data.length === 0) return { startDate: null, endDate: null }
+    if (hourlyData.length === 0) return { startDate: null, endDate: null }
 
     if (timePeriod === 'custom') {
       let startDate: Date | null = null
       let endDate: Date | null = null
 
       if (customStartDate) {
-        if ((aggregationMode === 'hour' || aggregationMode === '15min') && customStartTime) {
+        if (aggregationMode === 'hour' && customStartTime) {
           startDate = new Date(customStartDate + 'T' + customStartTime + ':00')
         } else {
           startDate = new Date(customStartDate + 'T00:00:00')
@@ -215,7 +320,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
       }
 
       if (customEndDate) {
-        if ((aggregationMode === 'hour' || aggregationMode === '15min') && customEndTime) {
+        if (aggregationMode === 'hour' && customEndTime) {
           endDate = new Date(customEndDate + 'T' + customEndTime + ':59')
         } else {
           endDate = new Date(customEndDate + 'T23:59:59')
@@ -233,6 +338,27 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     const startDate = new Date(endMs - windowMs)
     return { startDate, endDate }
   }
+
+  // Keep parent in sync with the currently active window.
+  useEffect(() => {
+    if (!onActiveWindowChange) return
+    const { startDate, endDate } = getActiveWindow()
+    onActiveWindowChange({
+      startMs: startDate ? startDate.getTime() : null,
+      endMs: endDate ? endDate.getTime() : null,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    onActiveWindowChange,
+    timePeriod,
+    presetAnchorMs,
+    customStartDate,
+    customEndDate,
+    customStartTime,
+    customEndTime,
+    aggregationMode,
+    hourlyData.length,
+  ])
 
   // Handle date range picker changes with validation
   const handleDateRangeChange = (range: DateRange | undefined) => {
@@ -296,12 +422,10 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     // Reset zoom when changing time periods to prevent chart disappearing
     setZoomRange(null)
     
-    // Auto-select appropriate aggregation mode
-    if (newPeriod === 'last24h' || newPeriod === 'last48h') {
-      setAggregationMode('15min')
-    } else if (newPeriod === 'last7d') {
+    // Auto-select appropriate aggregation mode for presets
+    if (newPeriod === 'last7d' || newPeriod === 'last14d') {
       setAggregationMode('hour')
-    } else if (newPeriod === 'last30d') {
+    } else if (newPeriod === 'last30d' || newPeriod === 'last3m') {
       setAggregationMode('day')
     }
     
@@ -349,72 +473,77 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   }
 
   // Generate aggregation key based on mode
-  const getAggregationKey = (date: Date, mode: 'day' | 'hour' | '15min'): string => {
-    if (mode === 'day') {
-      return date.toISOString().split('T')[0] // YYYY-MM-DD
-    } else if (mode === 'hour') {
-      const isoString = date.toISOString()
-      return isoString.split(':')[0] // YYYY-MM-DDTHH
-    } else {
-      // 15min: YYYY-MM-DDTHH:MM (rounded to nearest 15)
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const hour = String(date.getHours()).padStart(2, '0')
-      const minute = String(Math.floor(date.getMinutes() / 15) * 15).padStart(2, '0')
-      return `${year}-${month}-${day}T${hour}:${minute}`
-    }
+  const getAggregationKey = (date: Date, mode: 'day' | 'hour'): string => {
+    if (mode === 'day') return date.toISOString().split('T')[0] // YYYY-MM-DD
+    const isoString = date.toISOString()
+    return isoString.split(':')[0] // YYYY-MM-DDTHH
   }
 
   // Get display label for aggregation
-  const getDisplayLabel = (date: Date, mode: 'day' | 'hour' | '15min'): string => {
-    if (mode === 'day') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    } else if (mode === 'hour') {
-      const dayLabel = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
-      const hourLabel = date.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false }).replace(':00', '')
-      return `${dayLabel} ${hourLabel}h`
-    } else {
-      const dayLabel = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
-      const hour = String(date.getHours()).padStart(2, '0')
-      const minute = String(Math.floor(date.getMinutes() / 15) * 15).padStart(2, '0')
-      return `${dayLabel} ${hour}:${minute}`
-    }
+  const getDisplayLabel = (date: Date, mode: 'day' | 'hour'): string => {
+    if (mode === 'day') return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    const dayLabel = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
+    const hourLabel = date.toLocaleTimeString('en-US', { hour: 'numeric', hour12: false }).replace(':00', '')
+    return `${dayLabel} ${hourLabel}h`
   }
 
   // Filter data based on selected time period
   const getFilteredData = (): CursorUsage[] => {
-    if (data.length === 0) return []
+    if (hourlyData.length === 0) return []
 
     const { startDate, endDate } = getActiveWindow()
+    const startMs = startDate ? startDate.getTime() : null
+    const endMs = endDate ? endDate.getTime() : null
 
-    const filteredData = data.filter(usage => {
-      const usageDate = (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date))
-      if (startDate && usageDate < startDate) return false
-      if (endDate && usageDate > endDate) return false
-      return true
-    })
+    // Crossfilter-inspired: use the sorted time index to slice quickly
+    const lowerBound = (ms: number) => {
+      let lo = 0
+      let hi = hourlyData.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (hourlyData[mid]!.timestamp < ms) lo = mid + 1
+        else hi = mid
+      }
+      return lo
+    }
+
+    const upperBound = (ms: number) => {
+      let lo = 0
+      let hi = hourlyData.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (hourlyData[mid]!.timestamp <= ms) lo = mid + 1
+        else hi = mid
+      }
+      return lo
+    }
+
+    const lo = typeof startMs === 'number' ? lowerBound(startMs) : 0
+    const hi = typeof endMs === 'number' ? upperBound(endMs) : hourlyData.length
+    const filteredData = hourlyData.slice(lo, hi)
 
     // If no data matches the filter:
     // - For presets (1D/2D/1W/1M): return [] so we can show an explicit "no data in this window" state.
     // - For custom: keep the old fallback behavior to help users recover from out-of-bounds selection.
-    if (filteredData.length === 0 && data.length > 0 && timePeriod === 'custom') {
+    if (filteredData.length === 0 && hourlyData.length > 0 && timePeriod === 'custom') {
       console.log('No data in selected range, showing data boundaries instead')
       const { earliest, latest } = getDataBoundaries()
       
       // If the selected range is completely before our data, show earliest data
       if (endDate && endDate < earliest) {
-        return data.filter(usage => {
-          const usageDate = (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date))
-          return usageDate >= earliest && usageDate <= new Date(earliest.getTime() + 24 * 60 * 60 * 1000)
+        const end = earliest.getTime() + 24 * 60 * 60 * 1000
+        return hourlyData.filter(usage => {
+          const ms = (usage as any).timestamp as number
+          return ms >= earliest.getTime() && ms <= end
         })
       }
       
       // If the selected range is completely after our data, show latest data
       if (startDate && startDate > latest) {
-        return data.filter(usage => {
-          const usageDate = (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date))
-          return usageDate >= new Date(latest.getTime() - 24 * 60 * 60 * 1000) && usageDate <= latest
+        const start = latest.getTime() - 24 * 60 * 60 * 1000
+        return hourlyData.filter(usage => {
+          const ms = (usage as any).timestamp as number
+          return ms >= start && ms <= latest.getTime()
         })
       }
     }
@@ -423,51 +552,62 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
   }
 
   // Process and aggregate data with zoom filtering
-  const processData = (): ChartData[] => {
-    const filteredData = getFilteredData()
+  const processData = (filteredData: CursorUsage[]): ChartData[] => {
     if (filteredData.length === 0) return []
 
     // Group data by the selected aggregation mode
     const groupedData = filteredData.reduce((acc, usage) => {
-      const fullDate = (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date))
+      const fullDate = new Date((usage as any).timestamp as number)
       const key = getAggregationKey(fullDate, aggregationMode)
       
       if (!acc[key]) {
-        acc[key] = { models: {}, modelInput: {}, modelOutput: {}, fullDate }
+        acc[key] = { models: {}, modelInput: {}, modelOutput: {}, sumTokens: 0, sumCost: 0, fullDate }
       }
-      if (!acc[key].models[usage.model]) {
-        acc[key].models[usage.model] = 0
-        acc[key].modelInput[usage.model] = 0
-        acc[key].modelOutput[usage.model] = 0
+      const modelName = usage.model
+      const modelKey = modelKeyByName.get(modelName) ?? modelName
+
+      if (!acc[key].models[modelKey]) {
+        acc[key].models[modelKey] = 0
+        acc[key].modelInput[modelKey] = 0
+        acc[key].modelOutput[modelKey] = 0
       }
       
       // For tokens mode, separate input and output tokens
       if (metricMode === 'tokens' && usage.tokenBreakdown) {
         const inputTokens = usage.tokenBreakdown.inputWithCacheWrite + usage.tokenBreakdown.inputWithoutCacheWrite
         const outputTokens = usage.tokenBreakdown.output
-        acc[key].modelInput[usage.model] += inputTokens
-        acc[key].modelOutput[usage.model] += outputTokens
-        acc[key].models[usage.model] += inputTokens + outputTokens
+        acc[key].modelInput[modelKey] += inputTokens
+        acc[key].modelOutput[modelKey] += outputTokens
+        acc[key].models[modelKey] += inputTokens + outputTokens
       } else if (metricMode === 'tokens') {
-        acc[key].models[usage.model] += usage.tokens
+        acc[key].models[modelKey] += usage.tokens
       } else {
-        acc[key].models[usage.model] += (usage.costUsd || 0)
+        acc[key].models[modelKey] += (usage.costUsd || 0)
       }
+
+      // For derived metrics (e.g. cost per million), track totals once per bucket.
+      acc[key].sumTokens += usage.tokens || 0
+      acc[key].sumCost += usage.costUsd || 0
       
       return acc
-    }, {} as { [key: string]: { models: { [model: string]: number }, modelInput: { [model: string]: number }, modelOutput: { [model: string]: number }, fullDate: Date } })
+    }, {} as { [key: string]: { models: { [model: string]: number }, modelInput: { [model: string]: number }, modelOutput: { [model: string]: number }, sumTokens: number, sumCost: number, fullDate: Date } })
 
     // Get date range
-    const allDates = filteredData.map(usage => (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date)))
+    const allDates = filteredData.map(usage => new Date((usage as any).timestamp as number))
     const minDate = new Date(Math.min(...allDates.map(d => d.getTime())))
     const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())))
 
     // Generate complete time series
     const completeData: ChartData[] = []
     const current = new Date(minDate)
+    if (aggregationMode === 'day') {
+      current.setHours(0, 0, 0, 0)
+    } else {
+      current.setMinutes(0, 0, 0)
+    }
 
     // Get all unique models to ensure consistent data structure
-    const allModels = Array.from(new Set(filteredData.map(usage => usage.model)))
+    const allModels = modelDefs
 
     while (current <= maxDate) {
       const key = getAggregationKey(current, aggregationMode)
@@ -476,39 +616,27 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
       const chartEntry: ChartData = {
         date: displayLabel,
         fullDate: new Date(current),
-        costPerMillionTokens: 0,
       }
 
       // Initialize all models with 0 (for both input and output)
-      allModels.forEach(model => {
-        chartEntry[model] = 0
-        chartEntry[`${model}_input`] = 0
-        chartEntry[`${model}_output`] = 0
+      allModels.forEach(d => {
+        chartEntry[d.key] = 0
+        chartEntry[`${d.key}_input`] = 0
+        chartEntry[`${d.key}_output`] = 0
       })
 
       // Fill in actual data if it exists
       if (groupedData[key]) {
-        Object.entries(groupedData[key].models).forEach(([model, total]) => {
-          chartEntry[model] = total
+        Object.entries(groupedData[key].models).forEach(([modelKey, total]) => {
+          chartEntry[modelKey] = total
         })
-        Object.entries(groupedData[key].modelInput).forEach(([model, input]) => {
-          chartEntry[`${model}_input`] = input
+        Object.entries(groupedData[key].modelInput).forEach(([modelKey, input]) => {
+          chartEntry[`${modelKey}_input`] = input
         })
-        Object.entries(groupedData[key].modelOutput).forEach(([model, output]) => {
-          chartEntry[`${model}_output`] = output
+        Object.entries(groupedData[key].modelOutput).forEach(([modelKey, output]) => {
+          chartEntry[`${modelKey}_output`] = output
         })
       }
-
-      // Calculate cost per million tokens for this time period
-      const periodData = filteredData.filter(usage => {
-        const usageDate = (typeof (usage as any).timestamp === 'number' ? new Date((usage as any).timestamp) : parseDateTime(usage.date))
-        const usageKey = getAggregationKey(usageDate, aggregationMode)
-        return usageKey === key
-      })
-
-      const periodTokens = periodData.reduce((sum, usage) => sum + (usage.tokens || 0), 0)
-      const periodCosts = periodData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0)
-      chartEntry.costPerMillionTokens = periodTokens > 0 ? (periodCosts / periodTokens) * 1000000 : 0
 
       completeData.push(chartEntry)
 
@@ -517,8 +645,6 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
         current.setDate(current.getDate() + 1)
       } else if (aggregationMode === 'hour') {
         current.setHours(current.getHours() + 1)
-      } else {
-        current.setMinutes(current.getMinutes() + 15)
       }
     }
 
@@ -530,8 +656,132 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     return completeData
   }
 
-  const chartData = processData()
+  // Get all unique models from the dataset (stable ordering).
+  const allModels = useMemo(
+    () => Array.from(new Set(hourlyData.map((usage) => usage.model))).filter(Boolean).sort(),
+    [hourlyData]
+  )
+
+  // Recharts treats `dataKey` as a path (dots are separators), so model names like "claude-3.5"
+  // can break rendering. Use safe, deterministic keys and map back to display names.
+  type ModelDef = {
+    name: string
+    key: string
+    baseColor: string
+    inputColor: string
+    outputColor: string
+  }
+
+  const hashString32 = (s: string) => {
+    // djb2
+    let h = 5381
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i)
+    return h >>> 0
+  }
+
+  const getModelColorByName = (name: string) => {
+    const idx = hashString32(name) % CORE_MODEL_COLORS.length
+    return CORE_MODEL_COLORS[idx]!
+  }
+
+  const modelDefs: ModelDef[] = useMemo(() => {
+    const used = new Set<string>()
+    const out: ModelDef[] = []
+
+    const hexToRgb = (hex: string) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+      return result
+        ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) }
+        : { r: 0, g: 0, b: 0 }
+    }
+
+    for (const name of allModels) {
+      const baseColor = getModelColorByName(name)
+      const rgb = hexToRgb(baseColor)
+      const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`
+      const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)`
+
+      // Deterministic, safe key
+      let key = `m_${hashString32(name).toString(36)}`
+      while (used.has(key)) key = `${key}_x`
+      used.add(key)
+
+      out.push({ name, key, baseColor, inputColor, outputColor })
+    }
+
+    return out
+  }, [allModels])
+
+  const modelKeyByName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of modelDefs) m.set(d.name, d.key)
+    return m
+  }, [modelDefs])
+
+  const modelNameByKey = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of modelDefs) m.set(d.key, d.name)
+    return m
+  }, [modelDefs])
+
+  // PERF: these computations can be expensive for large datasets, so memoize them.
+  // This keeps row-click UI updates snappy by avoiding re-aggregating on selection changes.
+  const filteredData = useMemo(
+    () => getFilteredData(),
+    [
+      hourlyData,
+      timePeriod,
+      presetAnchorMs,
+      customStartDate,
+      customEndDate,
+      customStartTime,
+      customEndTime,
+      aggregationMode,
+    ]
+  )
+
+  const chartData = useMemo(
+    () => processData(filteredData),
+    [filteredData, aggregationMode, metricMode, modelKeyByName, modelDefs, zoomRange]
+  )
+
   const hasDataInWindow = chartData.length > 0
+
+  const chartDataByLabel = useMemo(() => {
+    const m = new Map<string, ChartData>()
+    for (const d of chartData) m.set(d.date, d)
+    return m
+  }, [chartData])
+
+  // Raw event details (top-K) for the current window (details on demand).
+  const filteredTotals = useMemo(() => {
+    let tokens = 0
+    let costUsd = 0
+    const models = new Set<string>()
+
+    for (const u of filteredData) {
+      tokens += u.tokens || 0
+      costUsd += u.costUsd || 0
+      if (u.model) models.add(u.model)
+    }
+
+    return { tokens, costUsd, modelsUsed: models.size }
+  }, [filteredData])
+
+  const activeBucketCount = useMemo(() => {
+    if (chartData.length === 0) return 0
+    return chartData.filter((d) => {
+      for (const m of modelDefs) {
+        if (metricMode === 'tokens') {
+          if (((d[`${m.key}_input`] as number) ?? 0) > 0) return true
+          if (((d[`${m.key}_output`] as number) ?? 0) > 0) return true
+        } else {
+          if (((d[m.key] as number) ?? 0) > 0) return true
+        }
+      }
+      return false
+    }).length
+  }, [chartData, modelDefs, metricMode])
 
   const activeWindowLabel = useMemo(() => {
     const { startDate, endDate } = getActiveWindow()
@@ -546,7 +796,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     customStartTime,
     customEndTime,
     aggregationMode,
-    data.length,
+    hourlyData.length,
   ])
 
   // Dynamic X-axis label density as data grows
@@ -555,8 +805,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
     // Target a reasonable number of visible labels per aggregation level
     const targetTicks =
       aggregationMode === 'day' ? 14 :
-      aggregationMode === 'hour' ? 24 :
-      24 // 15min
+      24
 
     const step = points > targetTicks ? Math.ceil(points / targetTicks) : 1
     const interval = Math.max(0, step - 1) // Recharts: 0=every tick, 1=every other, etc.
@@ -569,228 +818,191 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
       angle: rotate ? -45 : 0,
       height: rotate ? 80 : 32,
       tickFontSize:
-        aggregationMode === 'hour' ? 10 :
-        aggregationMode === '15min' ? 8 :
-        12,
+        aggregationMode === 'hour' ? 10 : 12,
       minTickGap: rotate ? 6 : 18,
     }
   }, [aggregationMode, chartData.length])
-  
-  // Get all unique models from the original data
-  const allModels = Array.from(new Set(data.map(usage => usage.model)))
-  
-  // Check if we're showing fallback data due to invalid date range
-  const isShowingFallbackData = () => {
-    if (timePeriod !== 'custom' || !customStartDate || !customEndDate) return false
-    
-    const { earliest, latest } = getDataBoundaries()
-    const startDateTime = new Date(customStartDate + 'T' + customStartTime + ':00')
-    const endDateTime = new Date(customEndDate + 'T' + customEndTime + ':59')
-    
-    // Check if the selected range is completely outside data boundaries
-    return (endDateTime < earliest) || (startDateTime > latest)
+
+  type ModelBreakdownRow = {
+    model: string
+    modelIndex: number
+    inputTokens: number
+    inputWithCacheWriteTokens: number
+    inputWithoutCacheWriteTokens: number
+    cacheReadTokens: number
+    outputTokens: number
+    totalTokens: number
+    costUsd: number
+    costUserCurrency: number
+    costPerMillionInputTokensUsd: number
+    costPerMillionOutputTokensUsd: number
   }
 
+  const toggleModelBreakdownSort = (key: ModelBreakdownSortKey) => {
+    if (key === modelBreakdownSortKey) {
+      setModelBreakdownSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setModelBreakdownSortKey(key)
+    setModelBreakdownSortDir(key === 'model' ? 'asc' : 'desc')
+  }
 
-  
-  // Enhanced color palette system with mathematical variations for better distinction
-  const getCoreColors = () => [
-    // Primary vibrant colors (base palette) - strategically ordered for maximum distinction
-    '#0097D7', // Blue
-    '#D70097', // Magenta/Pink  
-    '#00D7AC', // Teal/Cyan
-    '#D7AC00', // Gold/Yellow
-    '#FF6B6B', // Red
-    '#4ECDC4', // Light Teal
-    '#45B7D1', // Light Blue
-    '#96CEB4', // Mint Green
-    '#FFC324', // Orange/Yellow
-    '#FFEAA7', // Pale Yellow
-    '#DDA0DD', // Plum
-    '#98D8C8', // Seafoam
-    '#F7DC6F', // Light Gold
-    '#BB8FCE', // Lavender
-    '#85C1E9', // Sky Blue
-    '#F8C471', // Peach
-    '#82E0AA', // Light Green
-    '#AED6F1', // Powder Blue
-    '#F1948A', // Salmon
-    '#D7BDE2'  // Light Purple
-  ]
-  
-  const generateColorVariations = (baseColors: string[], totalNeeded: number) => {
-    const colors: string[] = [...baseColors]
-    
-    // If we need more colors than our base palette, generate variations
-    if (totalNeeded > baseColors.length) {
-      const baseCount = baseColors.length
-      
-      for (let i = baseCount; i < totalNeeded; i++) {
-        const baseIndex = i % baseCount
-        const baseColor = baseColors[baseIndex]
-        
-        // Convert hex to HSL for manipulation
-        const hsl = hexToHsl(baseColor)
-        
-        // Calculate variation level (how many times we've cycled through base colors)
-        const variationLevel = Math.floor(i / baseCount)
-        
-        let newHsl: { h: number, s: number, l: number }
-        
-        switch (variationLevel) {
-          case 1:
-            // First variation: Darker shades (reduce lightness by 25%)
-            newHsl = {
-              h: hsl.h,
-              s: Math.min(100, hsl.s + 10), // Slightly more saturated
-              l: Math.max(20, hsl.l - 25)   // Darker
-            }
-            break
-          case 2:
-            // Second variation: Lighter shades (increase lightness by 20%)
-            newHsl = {
-              h: hsl.h,
-              s: Math.max(30, hsl.s - 15), // Less saturated
-              l: Math.min(80, hsl.l + 20)  // Lighter
-            }
-            break
-          case 3:
-            // Third variation: Hue shift (+60 degrees)
-            newHsl = {
-              h: (hsl.h + 60) % 360,
-              s: hsl.s,
-              l: hsl.l
-            }
-            break
-          case 4:
-            // Fourth variation: Hue shift (-60 degrees) with saturation boost
-            newHsl = {
-              h: (hsl.h - 60 + 360) % 360,
-              s: Math.min(100, hsl.s + 20),
-              l: Math.max(25, hsl.l - 15)
-            }
-            break
-          default:
-            // Fallback: Use golden angle distribution with controlled saturation/lightness
-            const goldenAngle = 137.508
-            newHsl = {
-              h: (i * goldenAngle) % 360,
-              s: 65 + (i % 4) * 8,  // Vary saturation: 65%, 73%, 81%, 89%
-              l: 45 + (i % 3) * 10  // Vary lightness: 45%, 55%, 65%
-            }
-        }
-        
-        colors.push(hslToHex(newHsl.h, newHsl.s, newHsl.l))
+  const modelBreakdownRows: ModelBreakdownRow[] = useMemo(() => {
+    const byModel = new Map<string, Omit<ModelBreakdownRow, 'costPerMillionInputTokensUsd' | 'costPerMillionOutputTokensUsd' | 'costUserCurrency'>>()
+
+    for (const usage of filteredData) {
+      const model = usage.model
+      if (!model) continue
+
+      const prev = byModel.get(model) ?? {
+        model,
+        modelIndex: allModels.indexOf(model),
+        inputTokens: 0,
+        inputWithCacheWriteTokens: 0,
+        inputWithoutCacheWriteTokens: 0,
+        cacheReadTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        costUsd: 0,
       }
-    }
-    
-    return colors
-  }
-  
-  // Helper function to convert hex to HSL
-  const hexToHsl = (hex: string): { h: number, s: number, l: number } => {
-    const r = parseInt(hex.slice(1, 3), 16) / 255
-    const g = parseInt(hex.slice(3, 5), 16) / 255
-    const b = parseInt(hex.slice(5, 7), 16) / 255
-    
-    const max = Math.max(r, g, b)
-    const min = Math.min(r, g, b)
-    let h = 0, s = 0, l = (max + min) / 2
-    
-    if (max !== min) {
-      const d = max - min
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-      
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break
-        case g: h = (b - r) / d + 2; break
-        case b: h = (r - g) / d + 4; break
+
+      prev.totalTokens += usage.tokens || 0
+      prev.costUsd += usage.costUsd || 0
+
+      if (usage.tokenBreakdown) {
+        const inputWithCacheWrite = usage.tokenBreakdown.inputWithCacheWrite || 0
+        const inputWithoutCacheWrite = usage.tokenBreakdown.inputWithoutCacheWrite || 0
+        const output = usage.tokenBreakdown.output || 0
+        const cacheRead = usage.tokenBreakdown.cacheRead || 0
+
+        prev.inputWithCacheWriteTokens += inputWithCacheWrite
+        prev.inputWithoutCacheWriteTokens += inputWithoutCacheWrite
+        prev.cacheReadTokens += cacheRead
+        prev.outputTokens += output
+        prev.inputTokens += inputWithCacheWrite + inputWithoutCacheWrite
       }
-      h /= 6
+
+      byModel.set(model, prev)
     }
-    
-    return {
-      h: Math.round(h * 360),
-      s: Math.round(s * 100),
-      l: Math.round(l * 100)
+
+    const rows: ModelBreakdownRow[] = []
+    for (const r of byModel.values()) {
+      // Cost per 1M tokens:
+      // - Input: total USD cost ÷ (input tokens in millions)
+      // - Output: total USD cost ÷ (output tokens in millions)
+      // Cache read tokens are never part of the denominator.
+      const costPerMillionInputTokensUsd = r.inputTokens > 0 ? (r.costUsd / r.inputTokens) * 1_000_000 : 0
+      const costPerMillionOutputTokensUsd = r.outputTokens > 0 ? (r.costUsd / r.outputTokens) * 1_000_000 : 0
+      rows.push({
+        ...r,
+        modelIndex: r.modelIndex >= 0 ? r.modelIndex : 0,
+        costUserCurrency: convertFromUSD(r.costUsd),
+        costPerMillionInputTokensUsd,
+        costPerMillionOutputTokensUsd,
+      })
     }
-  }
-  
-  // Helper function to convert HSL to hex
-  const hslToHex = (h: number, s: number, l: number): string => {
-    h = h / 360
-    s = s / 100
-    l = l / 100
-    
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1
-      if (t > 1) t -= 1
-      if (t < 1/6) return p + (q - p) * 6 * t
-      if (t < 1/2) return q
-      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6
-      return p
-    }
-    
-    let r, g, b
-    
-    if (s === 0) {
-      r = g = b = l // achromatic
-    } else {
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-      const p = 2 * l - q
-      r = hue2rgb(p, q, h + 1/3)
-      g = hue2rgb(p, q, h)
-      b = hue2rgb(p, q, h - 1/3)
-    }
-    
-    const toHex = (c: number) => {
-      const hex = Math.round(c * 255).toString(16)
-      return hex.length === 1 ? '0' + hex : hex
-    }
-    
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`
-  }
-  
-  const getModelColor = (index: number) => {
-    const coreColors = getCoreColors()
-    const totalModels = allModels.length
-    
-    // Create a strategic color assignment to maximize visual separation
-    // Instead of sequential assignment, use a pattern that spreads colors out
-    let colorIndex: number
-    
-    if (totalModels <= coreColors.length) {
-      // For small numbers of models, use every nth color to maximize separation
-      const step = Math.max(1, Math.floor(coreColors.length / totalModels))
-      colorIndex = (index * step) % coreColors.length
-    } else {
-      // For many models, use the variation system but with better distribution
-      const colors = generateColorVariations(coreColors, totalModels)
-      colorIndex = index
-      
-      // Debug logging to see what's happening
-      if (index < 10) { // Only log first 10 to avoid spam
-        console.log(`Model ${index}: ${allModels[index]} -> Color: ${colors[colorIndex]}`)
+
+    return rows
+  }, [filteredData, allModels, convertFromUSD])
+
+  const sortedModelBreakdownRows = useMemo(() => {
+    const dir = modelBreakdownSortDir === 'asc' ? 1 : -1
+    const copy = [...modelBreakdownRows]
+
+    copy.sort((a, b) => {
+      if (modelBreakdownSortKey === 'model') {
+        const cmp = a.model.localeCompare(b.model)
+        if (cmp !== 0) return dir * cmp
+        return 0
       }
-      
-      return colors[colorIndex] || colors[colorIndex % colors.length]
+
+      const va = a[modelBreakdownSortKey] ?? 0
+      const vb = b[modelBreakdownSortKey] ?? 0
+      if (va !== vb) return dir * (va - vb)
+      return a.model.localeCompare(b.model)
+    })
+
+    return copy
+  }, [modelBreakdownRows, modelBreakdownSortDir, modelBreakdownSortKey])
+
+  const compareModelOptions = useMemo(() => {
+    // Match the dropdown ordering to the current table ordering (post-sort),
+    // so the list feels consistent with what the user is looking at.
+    const seen = new Set<string>()
+    const ordered: string[] = []
+    for (const r of sortedModelBreakdownRows) {
+      const m = r.model
+      if (!m || seen.has(m)) continue
+      seen.add(m)
+      ordered.push(m)
     }
-    
-    // Debug logging
-    if (index < 10) {
-      console.log(`Model ${index}: ${allModels[index]} -> Color: ${coreColors[colorIndex]}`)
+    return ordered
+  }, [sortedModelBreakdownRows])
+
+  useEffect(() => {
+    // Default is "no reference model". If the selected model disappears due to filtering,
+    // clear it rather than auto-selecting a new one.
+    if (referenceModel && !compareModelOptions.includes(referenceModel)) {
+      setReferenceModel(null)
     }
-    
-    return coreColors[colorIndex]
-  }
+  }, [compareModelOptions, referenceModel])
+
+  const referenceCostPerMillionInputUsd = useMemo(() => {
+    if (!referenceModel) return null
+    const refRow = modelBreakdownRows.find((r) => r.model === referenceModel)
+    const v = refRow?.costPerMillionInputTokensUsd ?? 0
+    return v > 0 ? v : null
+  }, [modelBreakdownRows, referenceModel])
+
+  const referenceCostPerMillionOutputUsd = useMemo(() => {
+    if (!referenceModel) return null
+    const refRow = modelBreakdownRows.find((r) => r.model === referenceModel)
+    const v = refRow?.costPerMillionOutputTokensUsd ?? 0
+    return v > 0 ? v : null
+  }, [modelBreakdownRows, referenceModel])
+  
+  // Note: previously used to show a fallback warning under the title; no longer needed.
+  
+  const getModelBaseColor = (modelName: string) => getModelColorByName(modelName)
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
+
+  const formatTokenTick = (value: number) => {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return ''
+    const sign = n < 0 ? '-' : ''
+    const abs = Math.abs(n)
+
+    const stripTrailingZero = (s: string) => s.replace(/\.0$/, '')
+
+    if (abs >= 1_000_000_000) {
+      const v = abs / 1_000_000_000
+      const decimals = v >= 10 ? 0 : 1
+      return `${sign}${stripTrailingZero(v.toFixed(decimals))}B`
+    }
+    if (abs >= 1_000_000) {
+      const v = abs / 1_000_000
+      const decimals = v >= 10 ? 0 : 1
+      return `${sign}${stripTrailingZero(v.toFixed(decimals))}M`
+    }
+    if (abs >= 1_000) {
+      const v = abs / 1_000
+      const decimals = v >= 10 ? 0 : 1
+      return `${sign}${stripTrailingZero(v.toFixed(decimals))}K`
+    }
+    return `${sign}${Math.round(abs).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  }
+
+  const CustomTooltip = ({ active, payload, label, coordinate }: any) => {
     if (active && payload && payload.length) {
+      const body = typeof document !== 'undefined' ? document.body : null
+      const rect = chartRef.current?.getBoundingClientRect()
+      if (!body || !rect || typeof coordinate?.x !== 'number' || typeof coordinate?.y !== 'number') return null
+
       // Find the corresponding chart data to get the full date
-      const dataPoint = chartData.find(d => d.date === label)
-      const barPayload = payload.filter((entry: any) => entry.dataKey !== 'costPerMillionTokens')
-      const linePayload = payload.find((entry: any) => entry.dataKey === 'costPerMillionTokens')
+      const dataPoint = chartDataByLabel.get(label)
+      const barPayload = payload
       
       const unit = metricMode === 'tokens' ? 'tokens' : 'USD'
       const formatValue = (value: number) => {
@@ -807,112 +1019,193 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
           const isInput = entry.dataKey.endsWith('_input')
           const isOutput = entry.dataKey.endsWith('_output')
           if (isInput) {
-            const model = entry.dataKey.replace('_input', '')
-            if (!modelGroups[model]) modelGroups[model] = { input: 0, output: 0, inputColor: '', outputColor: '' }
-            modelGroups[model].input = entry.value
-            modelGroups[model].inputColor = entry.color
+            const modelKey = entry.dataKey.replace('_input', '')
+            if (!modelGroups[modelKey]) modelGroups[modelKey] = { input: 0, output: 0, inputColor: '', outputColor: '' }
+            modelGroups[modelKey].input = entry.value
+            modelGroups[modelKey].inputColor = entry.color
           } else if (isOutput) {
-            const model = entry.dataKey.replace('_output', '')
-            if (!modelGroups[model]) modelGroups[model] = { input: 0, output: 0, inputColor: '', outputColor: '' }
-            modelGroups[model].output = entry.value
-            modelGroups[model].outputColor = entry.color
+            const modelKey = entry.dataKey.replace('_output', '')
+            if (!modelGroups[modelKey]) modelGroups[modelKey] = { input: 0, output: 0, inputColor: '', outputColor: '' }
+            modelGroups[modelKey].output = entry.value
+            modelGroups[modelKey].outputColor = entry.color
           }
         })
         
         const totalTokens = Object.values(modelGroups).reduce((sum, g) => sum + g.input + g.output, 0)
-        
-        return (
-          <div className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl min-w-[250px] z-[9999]" style={{ backgroundColor: 'white', position: 'relative', zIndex: 9999 }}>
-            <p className="font-semibold text-gray-900 mb-2">
-              {dataPoint?.fullDate.toLocaleDateString('en-US', { 
-                weekday: 'short',
-                month: 'short', 
-                day: 'numeric',
-                year: 'numeric',
-                ...(aggregationMode === 'hour' && {
-                  hour: 'numeric',
-                  hour12: true
-                })
-              })}
-            </p>
-            {Object.entries(modelGroups)
-              .filter(([_, data]) => data.input > 0 || data.output > 0)
-              .map(([model, data]) => (
-                <div key={model} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
-                  <p className="text-sm font-medium text-gray-900 mb-1">{model}</p>
-                  <div className="pl-2 space-y-0.5">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: data.inputColor }}></span>
-                        <span className="text-gray-600">Input:</span>
-                      </span>
-                      <span className="font-medium text-gray-900">{formatValue(data.input)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: data.outputColor }}></span>
-                        <span className="text-gray-600">Output:</span>
-                      </span>
-                      <span className="font-medium text-gray-900">{formatValue(data.output)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs pt-0.5">
-                      <span className="text-gray-500">Subtotal:</span>
-                      <span className="font-semibold text-gray-900">{formatValue(data.input + data.output)}</span>
-                    </div>
-                  </div>
+
+        const groupCount = Object.keys(modelGroups).filter((k) => {
+          const g = modelGroups[k]
+          return (g?.input ?? 0) > 0 || (g?.output ?? 0) > 0
+        }).length
+
+        // Cursor-following tooltip with edge clamping; bias "above" and push higher to avoid covering bars.
+        const estimatedHeightPx = Math.min(620, 132 + groupCount * 34)
+        const margin = 18
+        const cursorX = rect.left + coordinate.x
+        const cursorY = rect.top + coordinate.y
+        const spaceAbove = cursorY
+        const spaceBelow = window.innerHeight - cursorY
+        const placement: 'above' | 'below' =
+          spaceAbove >= estimatedHeightPx + margin ? 'above'
+            : spaceBelow >= estimatedHeightPx + margin ? 'below'
+              : spaceAbove >= spaceBelow ? 'above' : 'below'
+
+        const assumedWidth = 360
+        const left = clamp(cursorX, assumedWidth / 2 + 12, window.innerWidth - assumedWidth / 2 - 12)
+        const top = cursorY
+
+        return createPortal((
+          <div
+            className="rounded-lg shadow-xl min-w-[280px] border border-gray-200 overflow-hidden"
+            style={{
+              position: 'fixed',
+              left,
+              top,
+              transform:
+                placement === 'below'
+                  ? 'translate(-50%, 18px)'
+                  : 'translate(-50%, calc(-100% - 28px))',
+              zIndex: 2147483647,
+              pointerEvents: 'none',
+            }}
+          >
+            {/* Title bar */}
+            <div className="bg-secondary-900 text-white px-3 py-2">
+              <div className="font-semibold text-sm">
+                {dataPoint?.fullDate.toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  ...(aggregationMode === 'hour' && { hour: 'numeric', hour12: true }),
+                })}
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="bg-white text-gray-900 px-3 py-2">
+              <div className="max-h-[52vh] overflow-y-auto pr-1">
+                {Object.entries(modelGroups)
+                  .filter(([_, data]) => data.input > 0 || data.output > 0)
+                  .map(([modelKey, data]) => {
+                    const modelName = modelNameByKey.get(modelKey) ?? modelKey
+                    return (
+                      <div key={modelKey} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
+                        <p className="text-sm font-semibold text-gray-900 mb-1">{modelName}</p>
+                        <div className="pl-2 space-y-0.5">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: data.inputColor }}></span>
+                              <span className="text-gray-600">Input:</span>
+                            </span>
+                            <span className="font-semibold text-gray-900">{formatValue(data.input)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: data.outputColor }}></span>
+                              <span className="text-gray-600">Output:</span>
+                            </span>
+                            <span className="font-semibold text-gray-900">{formatValue(data.output)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs pt-0.5">
+                            <span className="text-gray-500">Subtotal:</span>
+                            <span className="font-bold text-gray-900">{formatValue(data.input + data.output)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+
+              {totalTokens > 0 && (
+                <div className="border-t border-gray-200 mt-2 pt-2">
+                  <p className="text-sm font-bold text-gray-900 flex justify-between">
+                    <span>Total:</span>
+                    <span>{formatValue(totalTokens)} tokens</span>
+                  </p>
                 </div>
-              ))}
-            {totalTokens > 0 && (
-              <div className="border-t border-gray-300 mt-2 pt-2">
-                <p className="text-sm font-bold text-gray-900 flex justify-between">
-                  <span>Total:</span>
-                  <span>{formatValue(totalTokens)} tokens</span>
-                </p>
-              </div>
-            )}
-            {linePayload && linePayload.value > 0 && (
-              <div className="border-t border-gray-300 mt-2 pt-2">
-                <p className="text-xs font-medium text-red-600">
-                  Cost per Million: ${linePayload.value.toFixed(2)}
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        )
+        ), body)
       }
       
       // Original tooltip for costs mode
       const totalValue = barPayload.reduce((sum: number, entry: any) => sum + (entry.value || 0), 0)
-      return (
-        <div className="p-3 border border-gray-200 rounded-lg shadow-xl z-[9999]" style={{ backgroundColor: 'white', position: 'relative', zIndex: 9999 }}>
-          <p className="font-semibold text-gray-900 mb-2">
-            {dataPoint?.fullDate.toLocaleDateString('en-US', { 
-              weekday: 'short',
-              month: 'short', 
-              day: 'numeric',
-              year: 'numeric',
-              ...(aggregationMode === 'hour' && {
-                hour: 'numeric',
-                hour12: true
-              })
-            })}
-          </p>
-          {barPayload
-            .filter((entry: any) => entry.value > 0)
-            .map((entry: any, index: number) => (
-              <p key={index} className="text-sm" style={{ color: entry.color }}>
-                {entry.dataKey}: {formatValue(entry.value)} {unit}
-              </p>
-            ))}
-          {totalValue > 0 && (
-            <div className="border-t border-gray-300 mt-2 pt-2">
-              <p className="text-sm font-medium text-gray-900">
-                Total: {formatValue(totalValue)} {unit}
-              </p>
+      // Cursor-following tooltip (costs mode)
+      const estimatedHeightPx = Math.min(520, 132 + barPayload.filter((e: any) => (e?.value ?? 0) > 0).length * 22)
+      const margin = 18
+      const cursorX = rect.left + coordinate.x
+      const cursorY = rect.top + coordinate.y
+      const spaceAbove = cursorY
+      const spaceBelow = window.innerHeight - cursorY
+      const placement: 'above' | 'below' =
+        spaceAbove >= estimatedHeightPx + margin ? 'above'
+          : spaceBelow >= estimatedHeightPx + margin ? 'below'
+            : spaceAbove >= spaceBelow ? 'above' : 'below'
+
+      const assumedWidth = 360
+      const left = clamp(cursorX, assumedWidth / 2 + 12, window.innerWidth - assumedWidth / 2 - 12)
+      const top = cursorY
+
+      return createPortal((
+        <div
+          className="rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+          style={{
+            position: 'fixed',
+            left,
+            top,
+            transform:
+              placement === 'below'
+                ? 'translate(-50%, 18px)'
+                : 'translate(-50%, calc(-100% - 28px))',
+            zIndex: 2147483647,
+            pointerEvents: 'none',
+          }}
+        >
+          {/* Title bar */}
+          <div className="bg-secondary-900 text-white px-3 py-2">
+            <div className="font-semibold text-sm">
+              {dataPoint?.fullDate.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                ...(aggregationMode === 'hour' && { hour: 'numeric', hour12: true }),
+              })}
             </div>
-          )}
+          </div>
+
+          {/* Body */}
+          <div className="bg-white text-gray-900 px-3 py-2">
+            <div className="max-h-[52vh] overflow-y-auto pr-1">
+              {barPayload
+                .filter((entry: any) => entry.value > 0)
+                .map((entry: any, index: number) => (
+                  <div key={index} className="flex items-center justify-between text-sm py-0.5">
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }}></span>
+                      <span className="text-gray-700 truncate">
+                        {entry.name ?? (modelNameByKey.get(String(entry.dataKey)) ?? entry.dataKey)}
+                      </span>
+                    </span>
+                    <span className="font-semibold text-gray-900 tabular-nums ml-3">
+                      {formatValue(entry.value)} {unit}
+                    </span>
+                  </div>
+                ))}
+            </div>
+
+            {totalValue > 0 && (
+              <div className="border-t border-gray-200 mt-2 pt-2">
+                <p className="text-sm font-semibold text-gray-900">
+                  Total: {formatValue(totalValue)} {unit}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-      )
+      ), body)
     }
     return null
   }
@@ -1010,79 +1303,109 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
         {/* Top Bar - AI Coder Guru Dark Blue (hidden in UI, shown in copy) */}
         <div className="top-bar bg-secondary-900 py-3 -mx-6 -mt-6 mb-4 hidden" style={{ borderTopLeftRadius: '0.75rem', borderTopRightRadius: '0.75rem' }}></div>
       
-      <div className="flex items-start justify-between mb-2">
+      <div className={cn("flex items-start justify-between", activeWindowLabel ? "mb-8" : "mb-4")}>
         {/* Left section for title */}
         <div className="flex-grow mr-4">
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white transition-colors duration-200">
-            {aggregationMode === 'day' ? 'Daily' : aggregationMode === 'hour' ? 'Hourly' : '15-Minute'} I/O Tokens by Model
-            {timePeriod && (
-              <span className="text-sm font-normal text-gray-600 dark:text-gray-400 ml-2">
-                ({timePeriod === 'last24h' ? 'Last 24 Hours' :
-                  timePeriod === 'last48h' ? 'Last 48 Hours' :
-                  timePeriod === 'last7d' ? 'Last 7 Days' :
-                  timePeriod === 'last30d' ? 'Last 30 Days' :
-                  timePeriod === 'custom' ? 'Custom Range' : ''})
-              </span>
-            )}
+            {aggregationMode === 'day' ? 'Daily' : 'Hourly'} tokens by model
           </h3>
-          {activeWindowLabel && (
-            <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-              <span className="font-medium">Showing:</span> {activeWindowLabel}
-            </div>
-          )}
         </div>
 
         {/* Right section for controls and copy button - responsive layout */}
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto md:flex-nowrap [@media(max-width:719px)]:flex-col [@media(max-width:719px)]:items-stretch">
           {/* Time Period Selector */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => shiftPresetWindow(-1)}
-              disabled={timePeriod === 'custom'}
-              className={cn(
-                "px-2 py-1 text-xs font-medium rounded transition-colors border",
-                timePeriod === 'custom'
-                  ? "opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400"
-                  : "border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600"
-              )}
-              title="Previous window"
-            >
-              ‹
-            </button>
-            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 transition-colors duration-200 mb-1 md:mb-0 max-w-[150px]">
-            <button onClick={() => handleTimePeriodChange('last24h')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last24h' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>1D</button>
-            <button onClick={() => handleTimePeriodChange('last48h')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last48h' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>2D</button>
-            <button onClick={() => handleTimePeriodChange('last7d')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last7d' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>1W</button>
-            <button onClick={() => handleTimePeriodChange('last30d')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'last30d' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>1M</button>
-            <button onClick={() => handleTimePeriodChange('custom')} className={cn("px-1 py-1 text-xs font-medium rounded transition-colors", timePeriod === 'custom' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')} title="Custom Date Range">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            </button>
+          <div className="relative">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => shiftPresetWindow(-1)}
+                disabled={timePeriod === 'custom'}
+                className={cn(
+                  "inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors border",
+                  timePeriod === 'custom'
+                    ? "opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400"
+                    : "border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600"
+                )}
+                title="Previous window"
+              >
+                ‹
+              </button>
+              <TimeRangeSegmentedControl<PresetTimePeriod>
+                value={timePeriod === 'custom' ? null : timePeriod}
+                onChange={(v) => handleTimePeriodChange(v)}
+                options={[
+                  { value: 'last7d', label: '1W' },
+                  { value: 'last14d', label: '2W' },
+                  { value: 'last30d', label: '1M' },
+                  { value: 'last3m', label: '3M' },
+                ]}
+                className="mx-1"
+              />
+
+              <button
+                onClick={() => handleTimePeriodChange('custom')}
+                className={cn(
+                  "ml-1 inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors",
+                  timePeriod === 'custom'
+                    ? "bg-secondary-900 text-white border-secondary-900"
+                    : "bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 border-gray-200 dark:border-gray-600 hover:bg-gray-200/60 dark:hover:bg-gray-600"
+                )}
+                title="Custom Date Range"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => shiftPresetWindow(1)}
+                disabled={timePeriod === 'custom'}
+                className={cn(
+                  "inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors border",
+                  timePeriod === 'custom'
+                    ? "opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400"
+                    : "border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600"
+                )}
+                title="Next window"
+              >
+                ›
+              </button>
             </div>
-            <button
-              onClick={() => shiftPresetWindow(1)}
-              disabled={timePeriod === 'custom'}
-              className={cn(
-                "px-2 py-1 text-xs font-medium rounded transition-colors border",
-                timePeriod === 'custom'
-                  ? "opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400"
-                  : "border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600"
-              )}
-              title="Next window"
-            >
-              ›
-            </button>
+            {activeWindowLabel && (
+              <div className="absolute left-0 top-full mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                <span className="font-medium">Showing:</span> {activeWindowLabel}
+              </div>
+            )}
           </div>
           {/* Metric Toggle */}
-          <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 transition-colors duration-200 mb-1 md:mb-0 max-w-[110px]">
-            <button onClick={() => setMetricMode('tokens')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", metricMode === 'tokens' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>Tokens</button>
-            <button onClick={() => setMetricMode('costs')} className={cn("px-2 py-1 text-xs font-medium rounded transition-colors", metricMode === 'costs' ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white')}>Costs</button>
+          <div className="flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-0.5 transition-colors duration-200 mb-1 md:mb-0 max-w-[140px] shadow-sm">
+            <button
+              onClick={() => setMetricMode('tokens')}
+              className={cn(
+                "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
+                metricMode === 'tokens'
+                  ? 'bg-secondary-900 text-white shadow-sm'
+                  : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
+              )}
+            >
+              Tokens
+            </button>
+            <button
+              onClick={() => setMetricMode('costs')}
+              className={cn(
+                "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
+                metricMode === 'costs'
+                  ? 'bg-secondary-900 text-white shadow-sm'
+                  : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
+              )}
+            >
+              Costs
+            </button>
           </div>
 
           <div className="flex items-center rounded-lg p-0.5 transition-colors duration-200 mb-1 md:mb-0">
             {/* Aggregation Toggle + Copy Button (responsive group) */}
             <div
               className="
-                flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 transition-colors duration-200 mb-1
+                flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-0.5 transition-colors duration-200 mb-1 shadow-sm
                 md:w-auto
                 flex-row
                 gap-2
@@ -1093,10 +1416,10 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 <button
                   onClick={() => setAggregationMode('day')}
                   className={cn(
-                    "px-2 py-1 text-xs font-medium rounded transition-colors",
+                    "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
                     aggregationMode === 'day'
-                      ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      ? 'bg-secondary-900 text-white shadow-sm'
+                      : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
                   )}
                 >
                   Daily
@@ -1104,24 +1427,13 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 <button
                   onClick={() => setAggregationMode('hour')}
                   className={cn(
-                    "px-2 py-1 text-xs font-medium rounded transition-colors",
+                    "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
                     aggregationMode === 'hour'
-                      ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      ? 'bg-secondary-900 text-white shadow-sm'
+                      : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
                   )}
                 >
                   Hourly
-                </button>
-                <button
-                  onClick={() => setAggregationMode('15min')}
-                  className={cn(
-                    "px-2 py-1 text-xs font-medium rounded transition-colors",
-                    aggregationMode === '15min'
-                      ? 'bg-gray-400 dark:bg-gray-600 text-gunmetal-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  )}
-                >
-                  15m
                 </button>
               </div>
             </div>
@@ -1131,7 +1443,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
             {/* Copy Chart Button */}
             <button
               onClick={handleCopyChart}
-              className="bg-white border-2 border-secondary-800 text-secondary-800 px-3 py-1.5 rounded-lg hover:bg-secondary-50 dark:bg-white dark:border-secondary-800 dark:text-secondary-800 dark:hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md ml-2"
+              className="inline-flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-secondary-900 dark:text-white/90 px-3 rounded-xl hover:bg-secondary-900 hover:text-white hover:border-secondary-900 transition-all duration-200 shadow-sm hover:shadow-md ml-2"
               title="Copy chart as image"
             >
               <div className="flex items-center gap-1.5">
@@ -1148,23 +1460,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
         </div>
       </div>
 
-      {/* Description and entry count on a new line */}
-      <div className="mb-4">
-        <p className="text-sm text-gray-600 dark:text-gray-400 transition-colors duration-200">
-          {metricMode === 'tokens' ? 'I/O tokens (input + output, excluding cache)' : 'Total costs'} per {aggregationMode}, segmented by AI model
-        </p>
-        {getFilteredData().length !== data.length && (
-          <p className="text-sm text-primary-600 dark:text-primary-400 mt-1">
-            Showing {getFilteredData().length} of {data.length} entries
-          </p>
-        )}
-        {isShowingFallbackData() && (
-          <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
-            Selected date range is outside available data - showing nearest available data
-          </p>
-        )}
-      </div>
-      
+     
       {copiedMessage && (
         <div className="absolute top-2 right-2 bg-green-100 text-green-700 px-3 py-1.5 rounded-md text-xs shadow-lg z-[150]">
           {copiedMessage}
@@ -1194,7 +1490,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 placeholder="Select date range"
                 className="w-60 text-xs" // Reduced width and text size
               />
-              {(aggregationMode === 'hour' || aggregationMode === '15min') && (
+              {aggregationMode === 'hour' && (
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-gray-500 dark:text-gray-400">Quick:</span>
                   <button onClick={() => setQuickRange(6)} className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors">6h</button>
@@ -1208,7 +1504,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
 
 
       {/* Chart */}
-      <div className="h-96 w-full" ref={chartRef} style={{ isolation: 'isolate' }}>
+      <div className="h-96 w-full" ref={chartRef}>
         {!hasDataInWindow && (
           <div className="h-full w-full flex items-center justify-center border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
             <div className="text-center px-6">
@@ -1227,6 +1523,11 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onClick={() => {
+            // If a model is highlighted, clicking the chart clears it.
+            // (Avoids hover-driven updates and gives users an easy "click off" behavior.)
+            if (!isDragging && selectedModel) clearSelectedModel()
+          }}
           onMouseLeave={() => {
             if (isDragging) {
               setIsDragging(false)
@@ -1260,52 +1561,27 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 yAxisId="left"
                 tick={{ fontSize: 12, fill: '#6b7280' }}
                 stroke="#9ca3af"
+                tickFormatter={metricMode === 'tokens' ? (v) => formatTokenTick(Number(v)) : undefined}
               />
-              {showCostPerMillionLine && (
-                <YAxis 
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 12, fill: '#6b7280' }}
-                  stroke="#9ca3af"
-                  tickFormatter={(value) => `$${value.toFixed(0)}`}
-                />
-              )}
               <Tooltip 
                 content={<CustomTooltip />}
-                wrapperStyle={{ zIndex: 9999, position: 'relative' }}
+                wrapperStyle={{ zIndex: 100000, pointerEvents: 'none' }}
                 allowEscapeViewBox={{ x: true, y: true }}
-                position={{ y: 0 }}
               />
               
               {/* Create stacked bars for each model - Input (bottom) and Output (top) */}
               {metricMode === 'tokens' ? (
-                allModels.map((model, index) => {
-                  const isDimmed = highlightedModel !== null && highlightedModel !== model
-                  const baseColor = getModelColor(index)
-                  
-                  // Convert hex to RGB for color manipulation
-                  const hexToRgb = (hex: string) => {
-                    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-                    return result ? {
-                      r: parseInt(result[1], 16),
-                      g: parseInt(result[2], 16),
-                      b: parseInt(result[3], 16)
-                    } : { r: 0, g: 0, b: 0 }
-                  }
-                  
-                  const rgb = hexToRgb(baseColor)
-                  const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)` // Darker/more opaque for input
-                  const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)` // Lighter for output
-                  
+                modelDefs.map((d) => {
+                  const isDimmed = selectedModelForChart !== null && selectedModelForChart !== d.name
                   return (
-                    <React.Fragment key={model}>
+                    <React.Fragment key={d.key}>
                       {/* Input tokens bar (bottom of stack) */}
                       <Bar
                         yAxisId="left"
-                        dataKey={`${model}_input`}
+                        dataKey={`${d.key}_input`}
                         stackId="usage"
-                        fill={inputColor}
-                        name={`${model} (Input)`}
+                        fill={d.inputColor}
+                        name={`${d.name} (Input)`}
                         opacity={isDimmed ? 0.3 : 1}
                         style={{
                           transition: 'opacity 0.2s ease-in-out'
@@ -1314,10 +1590,10 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                       {/* Output tokens bar (top of stack) */}
                       <Bar
                         yAxisId="left"
-                        dataKey={`${model}_output`}
+                        dataKey={`${d.key}_output`}
                         stackId="usage"
-                        fill={outputColor}
-                        name={`${model} (Output)`}
+                        fill={d.outputColor}
+                        name={`${d.name} (Output)`}
                         opacity={isDimmed ? 0.3 : 1}
                         style={{
                           transition: 'opacity 0.2s ease-in-out'
@@ -1328,17 +1604,17 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 })
               ) : (
                 // For costs mode, use single bars
-                allModels.map((model, index) => {
-                  const isDimmed = highlightedModel !== null && highlightedModel !== model
+                modelDefs.map((d) => {
+                  const isDimmed = selectedModelForChart !== null && selectedModelForChart !== d.name
                   
                   return (
                     <Bar
-                      key={model}
+                      key={d.key}
                       yAxisId="left"
-                      dataKey={model}
+                      dataKey={d.key}
                       stackId="usage"
-                      fill={getModelColor(index)}
-                      name={model}
+                      fill={d.baseColor}
+                      name={d.name}
                       opacity={isDimmed ? 0.3 : 0.8}
                       style={{
                         transition: 'opacity 0.2s ease-in-out'
@@ -1346,20 +1622,6 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                     />
                   )
                 })
-              )}
-              
-              {/* Cost per Million Tokens Line */}
-              {showCostPerMillionLine && (
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="costPerMillionTokens"
-                  stroke="#ef4444"
-                  strokeWidth={3}
-                  dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
-                  activeDot={{ r: 6, stroke: '#ef4444', strokeWidth: 2 }}
-                  name="Cost per Million Tokens"
-                />
               )}
             </ComposedChart>
           </ResponsiveContainer>
@@ -1386,17 +1648,15 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
           <div className="text-xs text-gray-600 dark:text-gray-300 transition-colors duration-200">
             <span className="font-medium">Last data point recorded:</span>{' '}
             {(() => {
-              const filteredData = getFilteredData()
               if (filteredData.length === 0) return 'No data available'
               
-              // Find the most recent data point
-              const latestDataPoint = filteredData.reduce((latest, current) => {
-                const currentDate = parseDateTime(current.date)
-                const latestDate = parseDateTime(latest.date)
-                return currentDate > latestDate ? current : latest
-              })
-              
-              const latestDate = parseDateTime(latestDataPoint.date)
+              // Data is sorted ascending; the last row is the most recent.
+              const latestDataPoint = filteredData[filteredData.length - 1]!
+              const latestMs =
+                typeof (latestDataPoint as any).timestamp === 'number'
+                  ? (latestDataPoint as any).timestamp
+                  : Date.parse(latestDataPoint.date)
+              const latestDate = new Date(latestMs)
               return latestDate.toLocaleDateString('en-US', {
                 weekday: 'short',
                 month: 'short',
@@ -1411,39 +1671,52 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
           
           {/* Dynamic Legend for Stacked Bars (shown on model hover) - positioned on same row */}
           <div className="flex items-center gap-4">
-            {metricMode === 'tokens' && highlightedModel && (
-              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 dark:bg-gray-700 border border-blue-200 dark:border-gray-600 rounded">
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {highlightedModel}:
-                </span>
-                {(() => {
-                  const modelIndex = allModels.indexOf(highlightedModel)
-                  const baseColor = getModelColor(modelIndex)
-                  const hexToRgb = (hex: string) => {
-                    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-                    return result ? {
-                      r: parseInt(result[1], 16),
-                      g: parseInt(result[2], 16),
-                      b: parseInt(result[3], 16)
-                    } : { r: 0, g: 0, b: 0 }
-                  }
-                  const rgb = hexToRgb(baseColor)
-                  const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`
-                  const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)`
-                  
-                  return (
-                    <>
-                      <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded" style={{ backgroundColor: inputColor }}></div>
-                        <span className="text-xs text-gray-600 dark:text-gray-400">Input</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <div className="w-3 h-3 rounded" style={{ backgroundColor: outputColor }}></div>
-                        <span className="text-xs text-gray-600 dark:text-gray-400">Output</span>
-                      </div>
-                    </>
-                  )
-                })()}
+            {/* Reserve vertical space so toggling highlight doesn't shift layout */}
+            {metricMode === 'tokens' && (
+              <div
+                className={cn(
+                  "flex items-center gap-2 px-2 py-1 h-7 bg-blue-50 dark:bg-gray-700 border border-blue-200 dark:border-gray-600 rounded transition-opacity",
+                  selectedModel ? "opacity-100" : "opacity-0 pointer-events-none"
+                )}
+                aria-hidden={!selectedModel}
+              >
+                {selectedModel ? (
+                  <>
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                      {selectedModel}:
+                    </span>
+                    {(() => {
+                      const baseColor = getModelBaseColor(selectedModel)
+                      const hexToRgb = (hex: string) => {
+                        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+                        return result ? {
+                          r: parseInt(result[1], 16),
+                          g: parseInt(result[2], 16),
+                          b: parseInt(result[3], 16)
+                        } : { r: 0, g: 0, b: 0 }
+                      }
+                      const rgb = hexToRgb(baseColor)
+                      const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`
+                      const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)`
+                      
+                      return (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <div className="w-3 h-3 rounded" style={{ backgroundColor: inputColor }}></div>
+                            <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Input</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="w-3 h-3 rounded" style={{ backgroundColor: outputColor }}></div>
+                            <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Output</span>
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  // Keep height stable even when hidden
+                  <span className="text-xs">&nbsp;</span>
+                )}
               </div>
             )}
             
@@ -1479,7 +1752,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 <div key={model} className="flex items-center space-x-2">
                   <span 
                     className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: getModelColor(originalIndex) }}
+                    style={{ backgroundColor: getModelBaseColor(model) }}
                   ></span>
                   <span className="text-xs font-medium text-gray-700 dark:text-gray-200 transition-colors duration-200">
                     {model} <span className="text-gray-500 dark:text-gray-400">({formatted})</span>
@@ -1492,229 +1765,382 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
         
         {/* Tabular Legend - Model Breakdown Table */}
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4 transition-colors duration-200">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 min-h-[28px]">
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Model Breakdown ({timePeriod === 'custom' ? 'Custom Range' : timePeriod})</h4>
             
-            {/* Cost per Million Tokens Line Toggle */}
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-gray-600 dark:text-gray-400">Show cost efficiency line</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Price compare to:</span>
+                <select
+                  value={referenceModel ?? ''}
+                  onChange={(e) => setReferenceModel(e.target.value || null)}
+                  className="h-7 text-xs rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  title="Select a reference model to compare input cost efficiency"
+                >
+                  <option value="">None</option>
+                  {compareModelOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Clear highlight */}
               <button
-                onClick={() => setShowCostPerMillionLine(!showCostPerMillionLine)}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-                  showCostPerMillionLine ? 'bg-primary-600' : 'bg-gray-200 dark:bg-gray-600'
-                }`}
+                type="button"
+                onClick={clearSelectedModel}
+                disabled={!selectedModel}
+                className={cn(
+                  'h-7 inline-flex items-center justify-center px-2 text-xs rounded-md border transition-colors',
+                  selectedModel
+                    ? 'bg-secondary-900 text-white border-secondary-900 hover:bg-secondary-800'
+                    : 'bg-gray-50 dark:bg-gray-700 text-gray-400 border-gray-200 dark:border-gray-600 cursor-not-allowed'
+                )}
+                title="Clear highlighted model"
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    showCostPerMillionLine ? 'translate-x-4' : 'translate-x-0.5'
-                  }`}
-                />
+                Clear highlight
               </button>
             </div>
           </div>
           
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto overflow-y-visible">
+            <table className="w-full text-sm leading-5">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-600">
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">#</th>
                   <th className="text-center py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Color</th>
-                  <th className="text-left py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Model</th>
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Input Tokens</th>
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Output Tokens</th>
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Total Tokens</th>
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Total Cost (USD)</th>
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Total Cost ({userCurrency})</th>
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Cost per Million Tokens (USD)</th>
+                  <th className="text-left py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('model')}
+                      className="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by model"
+                    >
+                      <span>Model</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'model' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('inputTokens')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by input tokens"
+                    >
+                      <span>Input Tokens</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'inputTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('cacheReadTokens')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by cache read tokens"
+                    >
+                      <span>Cache Read</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'cacheReadTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('outputTokens')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by output tokens"
+                    >
+                      <span>Output Tokens</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'outputTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('totalTokens')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by total tokens"
+                    >
+                      <span>Total Tokens</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'totalTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('costUsd')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by total cost (USD)"
+                    >
+                      <span>Total Cost (USD)</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'costUsd' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('costUserCurrency')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title={`Sort by total cost (${userCurrency})`}
+                    >
+                      <span>Total Cost ({userCurrency})</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'costUserCurrency' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('costPerMillionInputTokensUsd')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by cost per million input tokens (USD)"
+                    >
+                      <span>Cost / 1M Input Tokens (USD)</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'costPerMillionInputTokensUsd' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('costPerMillionOutputTokensUsd')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by cost per million output tokens (USD)"
+                    >
+                      <span>Cost / 1M Output Tokens (USD)</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'costPerMillionOutputTokensUsd' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
                   
                 </tr>
               </thead>
               <tbody>
-                {allModels
-                  .filter(model => getFilteredData().some(u => u.model === model))
-                  .map((model) => {
-                    const originalIndex = allModels.indexOf(model)
-                    
-                    // Always calculate the true values from the filtered underlying data
-                    const modelTokens = getFilteredData().reduce((sum, usage) => {
-                      return usage.model === model ? sum + (usage.tokens || 0) : sum
-                    }, 0)
-                    
-                    // Calculate input and output tokens separately
-                    const modelInputTokens = getFilteredData().reduce((sum, usage) => {
-                      if (usage.model === model && usage.tokenBreakdown) {
-                        return sum + usage.tokenBreakdown.inputWithCacheWrite + usage.tokenBreakdown.inputWithoutCacheWrite
-                      }
-                      return sum
-                    }, 0)
-                    
-                    const modelOutputTokens = getFilteredData().reduce((sum, usage) => {
-                      if (usage.model === model && usage.tokenBreakdown) {
-                        return sum + usage.tokenBreakdown.output
-                      }
-                      return sum
-                    }, 0)
-                    
-                    const modelCostsUSD = getFilteredData().reduce((sum, usage) => {
-                      return usage.model === model ? sum + (usage.costUsd || 0) : sum
-                    }, 0)
-                    const modelCostsUserCurrency = convertFromUSD(modelCostsUSD)
-                    const costPerMillionTokens = modelTokens > 0 ? (modelCostsUSD / modelTokens) * 1000000 : 0
+                {sortedModelBreakdownRows.map((row, idx) => {
+                    const model = row.model
                     
                     return (
                       <tr 
                         key={model} 
-                        className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-200 cursor-pointer"
-                        onMouseEnter={() => highlightModel(model)}
-                        onMouseLeave={() => unhighlightModel()}
+                        className={cn(
+                          "border-b border-gray-100 dark:border-gray-700 transition-colors duration-150 cursor-pointer h-10",
+                          selectedModel === model
+                            ? "bg-secondary-900 text-white"
+                            : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        )}
+                        onClick={() => toggleSelectedModel(model)}
+                        title="Click to highlight this model on the chart"
                       >
-                        <td className="py-2 px-3 text-center">
+                        <td className={cn(
+                          "py-2 px-3 text-right tabular-nums align-middle",
+                          selectedModel === model ? "text-white/90" : "text-gray-600 dark:text-gray-300"
+                        )}>
+                          {idx + 1}
+                        </td>
+                        <td className="py-2 px-3 text-center align-middle">
                           <span 
                             className="inline-block w-4 h-4 rounded-full"
-                            style={{ backgroundColor: getModelColor(originalIndex) }}
+                            style={{ backgroundColor: getModelBaseColor(model) }}
                             title={`${model} model color`}
                           ></span>
                         </td>
-                        <td className="py-2 px-3 font-medium text-gray-900 dark:text-white">
-                          {model}
-                        </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white group/input-chart relative">
-                          <div className="flex items-center justify-end space-x-1">
-                            <span>{modelInputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            {modelInputTokens > 0 && (
-                              <svg className="w-3 h-3 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                            )}
+                        <td className={cn(
+                          "py-2 px-3 font-medium align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="min-w-0 flex-1 truncate whitespace-nowrap" title={model}>
+                              {model}
+                            </span>
+                            {/* Reserve space so spinner never changes row height/wrapping */}
+                            <span
+                              className={cn(
+                                "inline-flex items-center justify-center w-3 h-3 shrink-0",
+                                selectedModel === model && isHighlightPending ? "visible" : "invisible"
+                              )}
+                              aria-hidden={!(selectedModel === model && isHighlightPending)}
+                            >
+                              <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-white/90"></span>
+                            </span>
                           </div>
-                          {modelInputTokens > 0 && (() => {
-                            const modelCacheRead = getFilteredData().reduce((sum, usage) => {
-                              if (usage.model === model && usage.tokenBreakdown) {
-                                return sum + usage.tokenBreakdown.cacheRead
-                              }
-                              return sum
-                            }, 0)
-                            const modelInputWithCache = getFilteredData().reduce((sum, usage) => {
-                              if (usage.model === model && usage.tokenBreakdown) {
-                                return sum + usage.tokenBreakdown.inputWithCacheWrite
-                              }
-                              return sum
-                            }, 0)
-                            const modelInputWithoutCache = getFilteredData().reduce((sum, usage) => {
-                              if (usage.model === model && usage.tokenBreakdown) {
-                                return sum + usage.tokenBreakdown.inputWithoutCacheWrite
-                              }
-                              return sum
-                            }, 0)
-                            
-                            return (
-                              <div className="invisible group-hover/input-chart:visible absolute right-0 top-full mt-1 z-50 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-64">
-                                <div className="font-semibold mb-2 text-blue-300">Input Token Details</div>
-                                <div className="space-y-1">
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-300">Input (w/ Cache Write):</span>
-                                    <span className="font-medium">{modelInputWithCache.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-300">Input (w/o Cache Write):</span>
-                                    <span className="font-medium">{modelInputWithoutCache.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                                    <span className="text-green-300">Output Tokens:</span>
-                                    <span className="font-medium text-green-300">{modelOutputTokens.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                                    <span className="text-orange-300">Cache Write:</span>
-                                    <span className="font-medium text-orange-300">{modelInputWithCache.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-purple-300">Cache Read:</span>
-                                    <span className="font-medium text-purple-300">{modelCacheRead.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
-                                    <span>Total:</span>
-                                    <span>{modelTokens.toLocaleString('en-US')}</span>
-                                  </div>
+                        </td>
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {row.inputTokens > 0 ? (
+                            <HoverPopover
+                              trigger={(
+                                <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                                  <span>{row.inputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                  <svg className="w-3 h-3 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </span>
+                              )}
+                              side="top"
+                              align="end"
+                              contentClassName="bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-64"
+                            >
+                              <div className="font-semibold mb-2 text-blue-300">Input Token Details</div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-300">Input Tokens:</span>
+                                  <span className="font-medium">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-green-300">Output Tokens:</span>
+                                  <span className="font-medium text-green-300">{row.outputTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 font-semibold">
+                                  <span className="text-gray-200">I/O Subtotal:</span>
+                                  <span className="font-medium text-gray-200">{(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                                  <span className="text-orange-300">Cache Write:</span>
+                                  <span className="font-medium text-orange-300">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-purple-300">Cache Read:</span>
+                                  <span className="font-medium text-purple-300">{row.cacheReadTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
+                                  <span>Total:</span>
+                                  <span>{row.totalTokens.toLocaleString('en-US')}</span>
                                 </div>
                               </div>
-                            )
-                          })()}
+                            </HoverPopover>
+                          ) : (
+                            <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                              <span>{row.inputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            </span>
+                          )}
                         </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          {modelOutputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        <td className={cn(
+                          "py-2 px-3 text-right tabular-nums align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {row.cacheReadTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white group/total-chart relative">
-                          <div className="flex items-center justify-end space-x-1">
-                            <span>{modelTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            {modelTokens > 0 && (
-                              <svg className="w-3 h-3 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                            )}
-                          </div>
-                          {modelTokens > 0 && (() => {
-                            const modelCacheRead = getFilteredData().reduce((sum, usage) => {
-                              if (usage.model === model && usage.tokenBreakdown) {
-                                return sum + usage.tokenBreakdown.cacheRead
-                              }
-                              return sum
-                            }, 0)
-                            const modelInputWithCache = getFilteredData().reduce((sum, usage) => {
-                              if (usage.model === model && usage.tokenBreakdown) {
-                                return sum + usage.tokenBreakdown.inputWithCacheWrite
-                              }
-                              return sum
-                            }, 0)
-                            const modelInputWithoutCache = getFilteredData().reduce((sum, usage) => {
-                              if (usage.model === model && usage.tokenBreakdown) {
-                                return sum + usage.tokenBreakdown.inputWithoutCacheWrite
-                              }
-                              return sum
-                            }, 0)
-                            
-                            return (
-                              <div className="invisible group-hover/total-chart:visible absolute right-0 top-full mt-1 z-50 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-72">
-                                <div className="font-semibold mb-2 text-primary-300">Complete Breakdown</div>
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-blue-200">
-                                    <span>Input (w/ Cache Write):</span>
-                                    <span className="font-medium">{modelInputWithCache.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between text-blue-200">
-                                    <span>Input (w/o Cache Write):</span>
-                                    <span className="font-medium">{modelInputWithoutCache.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between text-green-200">
-                                    <span>Output Tokens:</span>
-                                    <span className="font-medium">{modelOutputTokens.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
-                                    <span>Cache Write:</span>
-                                    <span className="font-medium">{modelInputWithCache.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between text-purple-200">
-                                    <span>Cache Read:</span>
-                                    <span className="font-medium">{modelCacheRead.toLocaleString('en-US')}</span>
-                                  </div>
-                                  <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
-                                    <span>Total:</span>
-                                    <span>{modelTokens.toLocaleString('en-US')}</span>
-                                  </div>
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {row.outputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </td>
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {row.totalTokens > 0 ? (
+                            <HoverPopover
+                              trigger={(
+                                <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                                  <span>{row.totalTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                  <svg className="w-3 h-3 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </span>
+                              )}
+                              side="top"
+                              align="end"
+                              contentClassName="bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-72"
+                            >
+                              <div className="font-semibold mb-2 text-primary-300">Complete Breakdown</div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-blue-200">
+                                  <span>Input Tokens:</span>
+                                  <span className="font-medium">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-700">
-                                  💡 I/O: {(modelInputTokens + modelOutputTokens).toLocaleString('en-US')} | Cache Write: {modelInputWithCache.toLocaleString('en-US')} | Cache Read: {modelCacheRead.toLocaleString('en-US')}
+                                <div className="flex justify-between text-green-200">
+                                  <span>Output Tokens:</span>
+                                  <span className="font-medium">{row.outputTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-gray-200 font-semibold">
+                                  <span>I/O Subtotal:</span>
+                                  <span className="font-medium">{(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
+                                  <span>Cache Write:</span>
+                                  <span className="font-medium">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between text-purple-200">
+                                  <span>Cache Read:</span>
+                                  <span className="font-medium">{row.cacheReadTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
+                                  <span>Total:</span>
+                                  <span>{row.totalTokens.toLocaleString('en-US')}</span>
                                 </div>
                               </div>
-                            )
-                          })()}
+                              <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-700">
+                                💡 I/O: {(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')} | Cache Write: {row.inputWithCacheWriteTokens.toLocaleString('en-US')} | Cache Read: {row.cacheReadTokens.toLocaleString('en-US')}
+                              </div>
+                            </HoverPopover>
+                          ) : (
+                            <span>{row.totalTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          )}
                         </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          ${modelCostsUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          ${row.costUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          {formatCurrency(modelCostsUserCurrency, userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {formatCurrency(row.costUserCurrency, userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          ${costPerMillionTokens.toFixed(2)}
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {row.costPerMillionInputTokensUsd > 0 ? (
+                            <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                              <span>${row.costPerMillionInputTokensUsd.toFixed(2)}</span>
+                              {referenceCostPerMillionInputUsd && (
+                                <span className="text-xs text-gray-500 dark:text-gray-300">
+                                  ({(row.costPerMillionInputTokensUsd / referenceCostPerMillionInputUsd).toFixed(1)}x)
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {row.costPerMillionOutputTokensUsd > 0 ? (
+                            <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                              <span>${row.costPerMillionOutputTokensUsd.toFixed(2)}</span>
+                              {referenceCostPerMillionOutputUsd && (
+                                <span className="text-xs text-gray-500 dark:text-gray-300">
+                                  ({(row.costPerMillionOutputTokensUsd / referenceCostPerMillionOutputUsd).toFixed(1)}x)
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         
                       </tr>
@@ -1723,10 +2149,9 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-300 dark:border-gray-500 bg-gray-50 dark:bg-gray-700/50 font-semibold">
-                  <td className="py-3 px-3 text-gray-900 dark:text-white">Total</td>
-                  <td className="py-3 px-3"></td>
+                  <td className="py-3 px-3 text-gray-900 dark:text-white" colSpan={3}>Total</td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
-                    {getFilteredData().reduce((sum, usage) => {
+                    {filteredData.reduce((sum, usage) => {
                       if (usage.tokenBreakdown) {
                         return sum + usage.tokenBreakdown.inputWithCacheWrite + usage.tokenBreakdown.inputWithoutCacheWrite
                       }
@@ -1734,7 +2159,13 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                     }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
-                    {getFilteredData().reduce((sum, usage) => {
+                    {filteredData.reduce((sum, usage) => {
+                      if (usage.tokenBreakdown) return sum + usage.tokenBreakdown.cacheRead
+                      return sum
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
+                    {filteredData.reduce((sum, usage) => {
                       if (usage.tokenBreakdown) {
                         return sum + usage.tokenBreakdown.output
                       }
@@ -1742,19 +2173,38 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                     }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
-                    {getFilteredData().reduce((sum, usage) => sum + (usage.tokens || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    {filteredData.reduce((sum, usage) => sum + (usage.tokens || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
-                    ${getFilteredData().reduce((sum, usage) => sum + (usage.costUsd || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${filteredData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
-                    {formatCurrency(convertFromUSD(getFilteredData().reduce((sum, usage) => sum + (usage.costUsd || 0), 0)), userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrency(convertFromUSD(filteredData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0)), userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     ${(() => {
-                      const totalTokens = getFilteredData().reduce((sum, usage) => sum + (usage.tokens || 0), 0)
-                      const totalCosts = getFilteredData().reduce((sum, usage) => sum + (usage.costUsd || 0), 0)
-                      return totalTokens > 0 ? ((totalCosts / totalTokens) * 1000000).toFixed(2) : '0.00'
+                      const inputTokens = filteredData.reduce((sum, usage) => {
+                        if (usage.tokenBreakdown) {
+                          return (
+                            sum +
+                            (usage.tokenBreakdown.inputWithCacheWrite || 0) +
+                            (usage.tokenBreakdown.inputWithoutCacheWrite || 0)
+                          )
+                        }
+                        return sum
+                      }, 0)
+                      const totalCosts = filteredData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0)
+                      return inputTokens > 0 ? ((totalCosts / inputTokens) * 1_000_000).toFixed(2) : '—'
+                    })()}
+                  </td>
+                  <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
+                    ${(() => {
+                      const output = filteredData.reduce((sum, usage) => {
+                        if (usage.tokenBreakdown) return sum + (usage.tokenBreakdown.output || 0)
+                        return sum
+                      }, 0)
+                      const totalCosts = filteredData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0)
+                      return output > 0 ? ((totalCosts / output) * 1_000_000).toFixed(2) : '—'
                     })()}
                   </td>
                   
@@ -1777,7 +2227,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
             <div className="space-y-1">
               <h4 className="text-sm font-semibold text-secondary-800 dark:text-gray-200">Total Tokens</h4>
               <div className="text-xl font-bold text-gray-900 dark:text-white">
-                {getFilteredData().reduce((sum, usage) => sum + (usage.tokens || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                {filteredTotals.tokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 Across {chartData.length} {aggregationMode}s
@@ -1791,10 +2241,10 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
             <div className="space-y-1">
               <h4 className="text-sm font-semibold text-secondary-800 dark:text-gray-200">Total Costs (USD)</h4>
               <div className="text-xl font-bold text-gray-900 dark:text-white">
-                ${getFilteredData().reduce((sum, usage) => sum + (usage.costUsd || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${filteredTotals.costUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-xs text-gray-600 dark:text-gray-400">
-                {chartData.filter(d => allModels.some(model => (d[model] as number) > 0)).length} active {aggregationMode}s
+                {activeBucketCount} active {aggregationMode}s
                 {zoomRange && <span className="text-secondary-600 dark:text-secondary-400"> • Zoomed</span>}
               </div>
             </div>
@@ -1805,10 +2255,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
             <div className="space-y-1">
               <h4 className="text-sm font-semibold text-secondary-800 dark:text-gray-200">Models Used</h4>
               <div className="text-xl font-bold text-gray-900 dark:text-white">
-                {allModels.filter(model => {
-                  // Only count models that have data in the current chart view
-                  return getFilteredData().some(u => u.model === model)
-                }).length}
+                {filteredTotals.modelsUsed}
               </div>
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 AI model types
@@ -1834,7 +2281,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
                 )}
               </h4>
               <div className="text-xl font-bold text-gray-900 dark:text-white">
-                {formatCurrency(convertFromUSD(getFilteredData().reduce((sum, usage) => sum + (usage.costUsd || 0), 0)), userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatCurrency(convertFromUSD(filteredTotals.costUsd), userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="text-xs text-gray-600 dark:text-gray-400">
                 Converted from USD
@@ -1882,7 +2329,7 @@ export default function CursorUsageChart({ data, isLoading = false, costDifferen
             {/* Green Spinner */}
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
             <div className="text-gray-700">
-              <div className="font-medium">Data pasting and uploading</div>
+              <div className="font-medium">Loading usage data</div>
               <div className="text-sm text-gray-500">Please wait...</div>
             </div>
           </div>
