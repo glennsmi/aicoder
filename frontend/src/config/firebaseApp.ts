@@ -2,6 +2,7 @@ import { initializeApp, FirebaseApp } from 'firebase/app'
 import { getAuth, Auth } from 'firebase/auth'
 import { getFirestore, Firestore } from 'firebase/firestore'
 import { getFunctions, Functions } from 'firebase/functions'
+import { getStorage, FirebaseStorage } from 'firebase/storage'
 import { firebaseConfig } from './firebase'
 
 // Initialize Firebase
@@ -13,6 +14,9 @@ export const db: Firestore = getFirestore(app)
 
 // Initialize Firebase Functions with europe-west2 region
 export const functions: Functions = getFunctions(app, 'europe-west2')
+
+// Initialize Firebase Storage
+export const storage: FirebaseStorage = getStorage(app)
 
 // Connect to emulator if in development (optional)
 // if (import.meta.env.DEV) {

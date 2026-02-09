@@ -152,5 +152,8 @@
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "260209_1904_storage.rules"
   }
 }

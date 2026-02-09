@@ -136,6 +136,8 @@ function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): Curso
   const eventAtMs =
     toMillis(data?.eventAtMs) ??
     toMillis(data?.timestamp) ??
+    // Some legacy collections store `date` as a Firestore Timestamp.
+    toMillis(data?.date) ??
     (typeof data?.date === 'string' ? toMillis(new Date(data.date)) : null)
 
   if (!eventAtMs || !Number.isFinite(eventAtMs) || eventAtMs <= 0) return null
@@ -274,31 +276,105 @@ async function getUserCursorUsageV2FromCollection(
   return out
 }
 
-export type UserUsageLoadSource = 'usageEvents' | 'cursorUsage' | 'enhancedAggregatedUsage' | 'aggregatedUsage' | 'none'
+export type UserUsageLoadSource =
+  | 'usageEvents'
+  | 'cursorUsage'
+  | 'enhanced_cursor_usage'
+  | 'enhancedAggregatedUsage'
+  | 'aggregatedUsage'
+  | 'mixed'
+  | 'none'
 
 export async function getUserAnySavedUsageV2(
   userId: string,
   options: GetUsageEventsOptions = {}
 ): Promise<{ source: UserUsageLoadSource; rows: CursorUsageV2[] }> {
-  // 1) Preferred canonical source
-  try {
-    const rows = await getUserCursorUsageEventsV2(userId, options)
-    if (rows.length > 0) return { source: 'usageEvents', rows }
-  } catch {
-    // If rules/indexing cause errors, continue to fallbacks
+  const startMs = typeof options.startMs === 'number' ? options.startMs : undefined
+  const endMs = typeof options.endMs === 'number' ? options.endMs : undefined
+
+  const applyWindow = (rows: CursorUsageV2[]): CursorUsageV2[] => {
+    if (!startMs && !endMs) return rows
+    return rows.filter((r) => {
+      const t = r.timestamp
+      if (startMs !== undefined && t < startMs) return false
+      if (endMs !== undefined && t >= endMs) return false
+      return true
+    })
   }
 
-  // 2) Legacy sources (best-effort mapping)
-  const cursorUsage = await getUserCursorUsageV2FromCollection('cursorUsage', userId, options)
-  if (cursorUsage.length > 0) return { source: 'cursorUsage', rows: cursorUsage }
+  const dedupeAndSort = (rows: CursorUsageV2[]): CursorUsageV2[] => {
+    const seen = new Set<string>()
+    const out: CursorUsageV2[] = []
+    for (const r of rows) {
+      // Deduplicate across mixed sources using a stable fingerprint.
+      // (event ids differ by collection; timestamps/models are consistent enough for display.)
+      const key = `${r.timestamp}|${r.model}|${r.tokens}|${r.costUsd ?? ''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(r)
+    }
+    out.sort((a, b) => a.timestamp - b.timestamp)
+    return out
+  }
 
-  const enhancedAgg = await getUserCursorUsageV2FromCollection('enhancedAggregatedUsage', userId, options)
-  if (enhancedAgg.length > 0) return { source: 'enhancedAggregatedUsage', rows: enhancedAgg }
+  // 1) Preferred canonical source
+  let usageEventsRows: CursorUsageV2[] = []
+  try {
+    usageEventsRows = applyWindow(await getUserCursorUsageEventsV2(userId, options))
+  } catch {
+    // If rules/indexing cause errors, continue to legacy sources.
+    usageEventsRows = []
+  }
 
-  const agg = await getUserCursorUsageV2FromCollection('aggregatedUsage', userId, options)
-  if (agg.length > 0) return { source: 'aggregatedUsage', rows: agg }
+  // If the canonical source has data, only fall back if it doesn't cover the requested window.
+  // This avoids unnecessary reads on accounts that have been fully migrated.
+  let needLegacy = usageEventsRows.length === 0
+  if (!needLegacy && startMs !== undefined) {
+    const earliest = usageEventsRows[0]?.timestamp
+    // If earliest is still newer than the requested start, we likely have older data in legacy collections.
+    if (typeof earliest === 'number' && Number.isFinite(earliest) && earliest > startMs) {
+      needLegacy = true
+    }
+  }
 
-  return { source: 'none', rows: [] }
+  if (!needLegacy) {
+    return { source: 'usageEvents', rows: dedupeAndSort(usageEventsRows) }
+  }
+
+  // 2) Legacy sources (best-effort mapping). We merge instead of picking the first non-empty
+  // so historic data doesn't "disappear" once `usageEvents` starts being populated.
+  const [cursorUsage, enhancedCursorUsage, enhancedAgg, agg] = await Promise.all([
+    getUserCursorUsageV2FromCollection('cursorUsage', userId, options),
+    // Very old storage used by org analytics and earlier connectors.
+    getUserCursorUsageV2FromCollection('enhanced_cursor_usage', userId, options),
+    getUserCursorUsageV2FromCollection('enhancedAggregatedUsage', userId, options),
+    getUserCursorUsageV2FromCollection('aggregatedUsage', userId, options),
+  ])
+
+  const combined = dedupeAndSort(
+    applyWindow([
+      ...usageEventsRows,
+      ...cursorUsage,
+      ...enhancedCursorUsage,
+      ...enhancedAgg,
+      ...agg,
+    ])
+  )
+
+  if (combined.length === 0) return { source: 'none', rows: [] }
+
+  // Preserve the original "single source" labels when possible for debugging/UX copy.
+  const hadUsageEvents = usageEventsRows.length > 0
+  const hadLegacy =
+    cursorUsage.length > 0 || enhancedCursorUsage.length > 0 || enhancedAgg.length > 0 || agg.length > 0
+
+  if (hadUsageEvents && hadLegacy) return { source: 'mixed', rows: combined }
+  if (hadUsageEvents) return { source: 'usageEvents', rows: combined }
+  if (cursorUsage.length > 0) return { source: 'cursorUsage', rows: combined }
+  if (enhancedCursorUsage.length > 0) return { source: 'enhanced_cursor_usage', rows: combined }
+  if (enhancedAgg.length > 0) return { source: 'enhancedAggregatedUsage', rows: combined }
+  if (agg.length > 0) return { source: 'aggregatedUsage', rows: combined }
+  return { source: 'none', rows: combined }
 }
 
 export type UsageDiagnostics = {

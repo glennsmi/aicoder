@@ -19,6 +19,7 @@ import TeamDashboardPage from './pages/TeamDashboardPage'
 import TeamMembersPage from './pages/TeamMembersPage'
 import TeamOverviewPage from './pages/TeamOverviewPage'
 import OrganizationSettingsPage from './pages/OrganizationSettingsPage'
+import AccountSettingsPage from './pages/260209_1849_AccountSettingsPage'
 
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -106,6 +107,11 @@ function App() {
                 <Route path="/team-overview" element={
                   <ProtectedRoute>
                     <Layout><TeamOverviewPage /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/account-settings" element={
+                  <ProtectedRoute>
+                    <Layout><AccountSettingsPage /></Layout>
                   </ProtectedRoute>
                 } />
 

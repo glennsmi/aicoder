@@ -100,6 +100,7 @@ export { ingestUsageEventsFromCcusageDailyJson } from './usage/ingestUsageEvents
 export { materializeOrgUsageEvents } from './usage/materializeOrgUsageEvents'
 export { refreshPricingCatalog } from './pricing/refreshPricingCatalog'
 export { refreshCurrencyRates, refreshCurrencyRatesManual } from './currency/260205_refreshCurrencyRates'
+export { clearMyData } from './users/260209_1849_clearMyData'
 
 // Export Stripe webhook
 export { stripeWebhook } from './webhooks/stripeWebhook'

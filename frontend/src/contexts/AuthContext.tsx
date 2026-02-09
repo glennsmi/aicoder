@@ -615,6 +615,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Fetch initial user data from Firestore
         const userData = await fetchUserData(firebaseUser.uid)
         setUser(userData)
+
+        // Keep Firestore user doc in sync with Auth profile (email/photo).
+        // This helps after secure email changes (verify-before-update) complete.
+        try {
+          const updates: Record<string, any> = {}
+          if (firebaseUser.email && userData?.email !== firebaseUser.email) updates.email = firebaseUser.email
+          if (firebaseUser.photoURL && (userData as any)?.profileImageUrl !== firebaseUser.photoURL) {
+            updates.profileImageUrl = firebaseUser.photoURL
+          }
+          if (Object.keys(updates).length > 0) {
+            await setDoc(doc(db, 'users', firebaseUser.uid), { ...updates, updatedAt: serverTimestamp() }, { merge: true })
+          }
+        } catch (e) {
+          console.warn('Failed to sync user profile fields to Firestore:', e)
+        }
         
         // Set up real-time listener for user document changes
         setupUserListener(firebaseUser.uid)
