@@ -15,7 +15,8 @@ export default function OrganizationSettingsPage() {
       name: organization?.name || '',
       allowMemberInvites: organization?.settings?.allowMemberInvites ?? true,
       requireTwoFactor: organization?.settings?.requireTwoFactor ?? false,
-      dataRetentionDays: organization?.settings?.dataRetentionDays ?? 90
+      dataRetentionDays: organization?.settings?.dataRetentionDays ?? 90,
+      whiteLabelBranding: organization?.settings?.reports?.whiteLabelBranding ?? false,
     }
   }, [organization])
 
@@ -23,6 +24,7 @@ export default function OrganizationSettingsPage() {
   const [allowMemberInvites, setAllowMemberInvites] = useState(initial.allowMemberInvites)
   const [requireTwoFactor, setRequireTwoFactor] = useState(initial.requireTwoFactor)
   const [dataRetentionDays, setDataRetentionDays] = useState<number>(initial.dataRetentionDays)
+  const [whiteLabelBranding, setWhiteLabelBranding] = useState<boolean>(initial.whiteLabelBranding)
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,6 +35,7 @@ export default function OrganizationSettingsPage() {
     setAllowMemberInvites(initial.allowMemberInvites)
     setRequireTwoFactor(initial.requireTwoFactor)
     setDataRetentionDays(initial.dataRetentionDays)
+    setWhiteLabelBranding(initial.whiteLabelBranding)
   }, [initial])
 
   const onSave = async () => {
@@ -57,7 +60,11 @@ export default function OrganizationSettingsPage() {
           ...organization.settings,
           allowMemberInvites,
           requireTwoFactor,
-          dataRetentionDays
+          dataRetentionDays,
+          reports: {
+            ...(organization.settings?.reports || {}),
+            whiteLabelBranding,
+          },
         },
         updatedAt: serverTimestamp()
       })
@@ -205,6 +212,29 @@ export default function OrganizationSettingsPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-4">
+          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white">
+            Reports
+          </h2>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={whiteLabelBranding}
+              onChange={(e) => setWhiteLabelBranding(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500"
+            />
+            <div>
+              <p className="text-sm font-semibold text-gunmetal-900 dark:text-white">
+                White-label branding on exported reports
+              </p>
+              <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                When enabled, exported charts/reports will show your organization branding. When disabled, they’ll use Fueld branding.
+              </p>
+            </div>
+          </label>
         </div>
 
         {error && (

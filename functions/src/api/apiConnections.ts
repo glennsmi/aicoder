@@ -1,5 +1,6 @@
-import * as functions from 'firebase-functions'
 import * as admin from 'firebase-admin'
+import { onCall, HttpsError } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 import {
   TestConnectionRequest,
   TestConnectionResult,
@@ -12,25 +13,28 @@ import {
 } from '../shared'
 import { ConnectorFactory } from '../connectors/ConnectorFactory'
 import { CredentialEncryption } from '../utils/encryption'
-import { checkPermission, Permission } from '../utils/permissions'
 
 const db = admin.firestore()
+
+async function assertOrgMember(organizationId: string, uid: string) {
+  const member = await db.collection('organizations').doc(organizationId).collection('members').doc(uid).get()
+  if (!member.exists) throw new HttpsError('permission-denied', 'You are not a member of this organization')
+  return member.data() as any
+}
 
 /**
  * Test API Connection
  * Validates credentials without saving them
  */
-export const testApiConnection = functions.https.onCall(
-  async (data: TestConnectionRequest, context) => {
-    // Check authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated')
+export const testApiConnection = onCall({ region: 'europe-west2' }, async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated')
     }
 
-    const { provider, credentials } = data
+    const { provider, credentials } = request.data as TestConnectionRequest
 
     if (!provider || !credentials) {
-      throw new functions.https.HttpsError('invalid-argument', 'Provider and credentials are required')
+      throw new HttpsError('invalid-argument', 'Provider and credentials are required')
     }
 
     try {
@@ -40,7 +44,7 @@ export const testApiConnection = functions.https.onCall(
       // Test connection
       const result = await connector.testConnection()
 
-      return result
+      return result as TestConnectionResult
     } catch (error) {
       console.error('Test connection error:', error)
       return {
@@ -48,46 +52,37 @@ export const testApiConnection = functions.https.onCall(
         message: error instanceof Error ? error.message : String(error)
       } as TestConnectionResult
     }
-  }
-)
+  })
 
 /**
  * Add API Connection
  * Encrypts and saves credentials, schedules first sync
  */
-export const addApiConnection = functions.https.onCall(
-  async (data: AddConnectionRequest, context) => {
-    // Check authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated')
+export const addApiConnection = onCall({ region: 'europe-west2' }, async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated')
     }
 
-    const userId = context.auth.uid
-    const { organizationId, provider, displayName, credentials, syncFrequency = 'daily' } = data
+    const userId = request.auth.uid
+    const { organizationId, provider, displayName, credentials, syncFrequency = 'daily' } = request.data as AddConnectionRequest
 
     if (!organizationId || !provider || !displayName || !credentials) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'invalid-argument',
         'Organization ID, provider, display name, and credentials are required'
       )
     }
 
     try {
-      // Check if user has permission to manage API connections
-      const hasPermission = await checkPermission(userId, organizationId, Permission.MANAGE_BILLING)
-      if (!hasPermission) {
-        throw new functions.https.HttpsError(
-          'permission-denied',
-          'User does not have permission to manage API connections'
-        )
-      }
+      // Any org member can create their own connection.
+      await assertOrgMember(organizationId, userId)
 
       // Test connection first
       const connector = ConnectorFactory.createConnector(provider, credentials)
       const testResult = await connector.testConnection()
 
       if (!testResult.success) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'failed-precondition',
           `Connection test failed: ${testResult.message}`
         )
@@ -132,34 +127,31 @@ export const addApiConnection = functions.https.onCall(
     } catch (error) {
       console.error('Add connection error:', error)
       
-      if (error instanceof functions.https.HttpsError) {
+      if (error instanceof HttpsError) {
         throw error
       }
       
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'internal',
         error instanceof Error ? error.message : String(error)
       )
     }
-  }
-)
+  })
 
 /**
  * Sync API Connection
  * Manually trigger a sync for a connection
  */
-export const syncApiConnection = functions.https.onCall(
-  async (data: SyncConnectionRequest, context) => {
-    // Check authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated')
+export const syncApiConnection = onCall({ region: 'europe-west2' }, async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated')
     }
 
-    const userId = context.auth.uid
-    const { connectionId, dateRange } = data
+    const userId = request.auth.uid
+    const { connectionId, dateRange } = request.data as SyncConnectionRequest
 
     if (!connectionId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Connection ID is required')
+      throw new HttpsError('invalid-argument', 'Connection ID is required')
     }
 
     try {
@@ -167,18 +159,16 @@ export const syncApiConnection = functions.https.onCall(
       const connectionDoc = await db.collection('apiConnections').doc(connectionId).get()
 
       if (!connectionDoc.exists) {
-        throw new functions.https.HttpsError('not-found', 'Connection not found')
+        throw new HttpsError('not-found', 'Connection not found')
       }
 
       const connection = { id: connectionDoc.id, ...connectionDoc.data() } as APIConnection
 
-      // Check permission
-      const hasPermission = await checkPermission(userId, connection.organizationId, Permission.MANAGE_BILLING)
-      if (!hasPermission) {
-        throw new functions.https.HttpsError(
-          'permission-denied',
-          'User does not have permission to sync this connection'
-        )
+      const member = await assertOrgMember(connection.organizationId, userId)
+      const isAdmin = String((member as any)?.role || '') === 'admin'
+      const isOwner = connection.createdBy === userId
+      if (!isAdmin && !isOwner) {
+        throw new HttpsError('permission-denied', 'You can only sync connections you created')
       }
 
       // Decrypt credentials
@@ -254,26 +244,24 @@ export const syncApiConnection = functions.https.onCall(
     } catch (error) {
       console.error('Sync connection error:', error)
       
-      if (error instanceof functions.https.HttpsError) {
+      if (error instanceof HttpsError) {
         throw error
       }
       
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'internal',
         error instanceof Error ? error.message : String(error)
       )
     }
-  }
-)
+  })
 
 /**
  * Scheduled API Sync
  * Runs daily at 2 AM UTC to sync all active connections
  */
-export const scheduledApiSync = functions.pubsub
-  .schedule('0 2 * * *') // Daily at 2 AM UTC
-  .timeZone('UTC')
-  .onRun(async (context) => {
+export const scheduledApiSync = onSchedule(
+  { schedule: '0 2 * * *', timeZone: 'UTC', region: 'europe-west2' },
+  async () => {
     console.log('Starting scheduled API sync')
 
     try {
@@ -388,5 +376,6 @@ export const scheduledApiSync = functions.pubsub
       console.error('Scheduled sync error:', error)
       throw error
     }
-  })
+  }
+)
 

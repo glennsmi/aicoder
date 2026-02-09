@@ -8,9 +8,13 @@ interface CurrencySelectorProps {
   onClose: () => void
 }
 
+// Currencies that traditionally show the inverse quote (1 XXX = ? USD)
+// Commonwealth currencies + Euro
+const INVERSE_QUOTE_CURRENCIES = new Set(['GBP', 'EUR', 'AUD', 'NZD', 'CAD'])
+
 export default function CurrencySelector({ isOpen, onClose }: CurrencySelectorProps) {
   const { currentUser } = useAuth()
-  const { userCurrency, updateUserCurrency, loading } = useCurrency()
+  const { userCurrency, updateUserCurrency, currencyRates, loading } = useCurrency()
   const [searchTerm, setSearchTerm] = useState('')
 
   // Clear search when modal opens
@@ -142,40 +146,67 @@ export default function CurrencySelector({ isOpen, onClose }: CurrencySelectorPr
             </div>
           ) : (
             <div className="p-4 space-y-2">
-              {filteredCurrencies.map((currency) => (
-                <button
-                  key={currency.code}
-                  onClick={() => handleCurrencyChange(currency.code)}
-                  disabled={loading}
-                  className={`w-full px-4 py-3 rounded-lg text-left transition-all duration-200 border-2 ${
-                    userCurrency === currency.code
-                      ? 'border-primary-500 bg-primary-50 text-primary-900'
-                      : 'border-gray-200 bg-white hover:border-primary-300 hover:bg-primary-50 text-gunmetal-900'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-2xl">{currency.flag}</span>
-                      <div>
-                        <div className="font-medium text-sm">
-                          {currency.name}
-                        </div>
-                        <div className="text-xs text-gunmetal-500">
-                          {currency.code} • {currency.symbol}
+              {filteredCurrencies.map((currency) => {
+                const rate = currencyRates[currency.code]
+                const hasRate = rate && currency.code !== 'USD'
+                const showInverse = INVERSE_QUOTE_CURRENCIES.has(currency.code)
+                const inverseRate = hasRate ? (1 / rate.rate) : null
+
+                return (
+                  <button
+                    key={currency.code}
+                    onClick={() => handleCurrencyChange(currency.code)}
+                    disabled={loading}
+                    className={`w-full px-4 py-3 rounded-lg text-left transition-all duration-200 border-2 ${
+                      userCurrency === currency.code
+                        ? 'border-primary-500 bg-primary-50 text-primary-900'
+                        : 'border-gray-200 bg-white hover:border-primary-300 hover:bg-primary-50 text-gunmetal-900'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-2xl">{currency.flag}</span>
+                        <div>
+                          <div className="font-medium text-sm">
+                            {currency.name}
+                          </div>
+                          <div className="text-xs text-gunmetal-500">
+                            {currency.code} • {currency.symbol}
+                          </div>
+                          {/* Exchange rate display */}
+                          {hasRate && (
+                            <div className="mt-1 space-y-0.5">
+                              <div className="text-xs text-gunmetal-400 font-mono">
+                                $1 = {currency.symbol}{rate.rate.toFixed(rate.rate < 10 ? 4 : 2)}
+                              </div>
+                              {showInverse && inverseRate && (
+                                <div className="text-xs text-primary-500 font-mono">
+                                  {currency.symbol}1 = ${inverseRate.toFixed(4)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {currency.code === 'USD' && (
+                            <div className="mt-1">
+                              <div className="text-xs text-gunmetal-400 font-mono">
+                                Base currency
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
+                      
+                      {userCurrency === currency.code && (
+                        <div className="flex items-center text-primary-600">
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
                     </div>
-                    
-                    {userCurrency === currency.code && (
-                      <div className="flex items-center text-primary-600">
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>

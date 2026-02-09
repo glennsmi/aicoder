@@ -13,6 +13,16 @@ service cloud.firestore {
     function isUser(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function isOrgAdmin(orgId) {
+      return isOrgMember(orgId) &&
+        get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
     
     // ===== ORGANIZATIONS ===== 
     match /organizations/{orgId} {
@@ -49,6 +59,17 @@ service cloud.firestore {
         // Client writes disabled (server-side only).
         allow write, create, update, delete: if false;
       }
+    }
+
+    // ===== API CONNECTIONS (TOP-LEVEL) =====
+    // Cloud Functions writes these docs. Clients can read:
+    // - admins: all org connections
+    // - members: only their own connections (createdBy == uid)
+    match /apiConnections/{connectionId} {
+      allow read: if isAuthenticated() &&
+        isOrgMember(resource.data.organizationId) &&
+        (resource.data.createdBy == request.auth.uid || isOrgAdmin(resource.data.organizationId));
+      allow write, create, update, delete: if false;
     }
     
     // ===== SUBSCRIPTIONS =====
@@ -107,9 +128,17 @@ service cloud.firestore {
     }
     
     // ===== CURRENCY RATES =====
+    // Written by Cloud Functions (Admin SDK bypasses rules).
     match /currencyRates/{currencyCode} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ===== CURRENCY RATES HISTORY =====
+    // Daily historical snapshots written by Cloud Functions.
+    match /currencyRatesHistory/{date} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
     
     // ===== SYNC HISTORY =====

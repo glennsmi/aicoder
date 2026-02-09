@@ -380,26 +380,20 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') openDetails(team)
                 }}
-                className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-500 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gunmetal-900 dark:text-white">
-                      {team.name}
-                    </h3>
-                    {team.description && (
-                      <p className="text-sm text-gunmetal-600 dark:text-gray-400 mt-1">
-                        {team.description}
-                      </p>
-                    )}
-                  </div>
+                {/* Green title banner */}
+                <div className="flex items-center justify-between bg-accent-400 px-6 py-3">
+                  <h3 className="text-lg font-semibold text-white">
+                    {team.name}
+                  </h3>
                   <div className="relative">
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         setOpenMenuTeamId((prev) => (prev === team.id ? null : team.id))
                       }}
-                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+                      className="text-white/70 hover:text-white p-1 rounded-md hover:bg-white/20"
                       aria-label="Team actions"
                       type="button"
                     >
@@ -439,7 +433,15 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                {team.description && (
+                  <div className="px-6 pt-4">
+                    <p className="text-sm text-gunmetal-600 dark:text-gray-400">
+                      {team.description}
+                    </p>
+                  </div>
+                )}
+
+                <div className="px-6 pt-4 space-y-3">
                   <div className="flex items-center gap-2 text-sm">
                     <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -461,7 +463,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                   )}
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="mx-6 mt-4 pt-4 pb-6 border-t border-gray-200 dark:border-gray-700">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -486,23 +488,17 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
           onClick={() => setDetailsTeam(null)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6"
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white">
-                  {detailsTeam.name}
-                </h3>
-                {detailsTeam.description ? (
-                  <p className="text-sm text-gunmetal-600 dark:text-gray-400 mt-1">
-                    {detailsTeam.description}
-                  </p>
-                ) : null}
-              </div>
+            {/* Green title banner */}
+            <div className="flex items-center justify-between bg-accent-400 px-6 py-3">
+              <h3 className="text-xl font-bold text-white">
+                {detailsTeam.name}
+              </h3>
               <button
                 type="button"
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="text-white/70 hover:text-white p-1 rounded-md hover:bg-white/20"
                 onClick={() => setDetailsTeam(null)}
                 aria-label="Close"
               >
@@ -511,6 +507,13 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                 </svg>
               </button>
             </div>
+
+            <div className="p-6">
+            {detailsTeam.description ? (
+              <p className="text-sm text-gunmetal-600 dark:text-gray-400 mb-4">
+                {detailsTeam.description}
+              </p>
+            ) : null}
 
             {(() => {
               const teamMembers = members.filter((m) => m.teamId === detailsTeam.id)
@@ -620,6 +623,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                 </div>
               )
             })()}
+            </div>
           </div>
         </div>
       )}
@@ -631,12 +635,17 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
           onClick={() => setAddMembersTeam(null)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6"
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-1">
-              Add members to {addMembersTeam.name}
-            </h3>
+            {/* Green title banner */}
+            <div className="bg-accent-400 px-6 py-3">
+              <h3 className="text-xl font-bold text-white">
+                Add members to {addMembersTeam.name}
+              </h3>
+            </div>
+
+            <div className="p-6">
             <p className="text-sm text-gunmetal-600 dark:text-gray-400 mb-4">
               Selected members will be assigned to this team.
             </p>
@@ -733,6 +742,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                 {actionLoading ? 'Adding...' : 'Add members'}
               </button>
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -744,13 +754,17 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
           onClick={() => setSetManagerTeam(null)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6"
+            className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-4">
-              Set manager for {setManagerTeam.name}
-            </h3>
+            {/* Green title banner */}
+            <div className="bg-accent-400 px-6 py-3">
+              <h3 className="text-xl font-bold text-white">
+                Set manager for {setManagerTeam.name}
+              </h3>
+            </div>
 
+            <div className="p-6">
             {actionError && (
               <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
@@ -798,6 +812,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
                 {actionLoading ? 'Saving...' : 'Save'}
               </button>
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -805,11 +820,15 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
       {/* Create Team Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-4">
-              Create New Team
-            </h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full overflow-hidden">
+            {/* Green title banner */}
+            <div className="bg-accent-400 px-6 py-3">
+              <h3 className="text-xl font-bold text-white">
+                Create New Team
+              </h3>
+            </div>
 
+            <div className="p-6">
             {error && (
               <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -883,6 +902,7 @@ export default function TeamManagementPanel({ onTeamCreated }: TeamManagementPan
               >
                 {loading ? 'Creating...' : 'Create Team'}
               </button>
+            </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { httpsCallable } from 'firebase/functions'
+import { BarChart3, SearchX, Users, Trophy } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOrganization } from '@/contexts/OrganizationContext'
 import CursorUsageChart from '@/components/CursorUsageChart'
@@ -273,7 +274,15 @@ export default function DashboardPage() {
             </div>
             <select
               value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
+              onChange={(e) => {
+                const newUserId = e.target.value
+                setSelectedUserId(newUserId)
+                // When going back to "All users", reset team filter that may have
+                // been auto-resolved by the useEffect so the user sees all data again.
+                if (newUserId === 'all') {
+                  setSelectedTeamId('all')
+                }
+              }}
               className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             >
               <option value="all">All users</option>
@@ -341,7 +350,12 @@ export default function DashboardPage() {
           </div>
 
           {(showAllUsers ? userLeaderboard : userLeaderboard.slice(0, 5)).length === 0 ? (
-            <div className="text-sm text-gray-600 dark:text-gray-300">No usage yet in this window.</div>
+            <div className="flex flex-col items-center justify-center py-6 animate-[fadeIn_0.3s_ease-in-out]">
+              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 mb-2">
+                <Users className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">No usage yet in this window</div>
+            </div>
           ) : (
             <div className="space-y-2">
               {(showAllUsers ? userLeaderboard : userLeaderboard.slice(0, 5)).map((u, idx) => (
@@ -387,7 +401,12 @@ export default function DashboardPage() {
             </div>
 
             {(showAllTeams ? teamLeaderboard : teamLeaderboard.slice(0, 5)).length === 0 ? (
-              <div className="text-sm text-gray-600 dark:text-gray-300">No usage yet in this window.</div>
+              <div className="flex flex-col items-center justify-center py-6 animate-[fadeIn_0.3s_ease-in-out]">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 mb-2">
+                  <Trophy className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">No team usage yet in this window</div>
+              </div>
             ) : (
               <div className="space-y-2">
                 {(showAllTeams ? teamLeaderboard : teamLeaderboard.slice(0, 5)).map((t, idx) => (
@@ -421,10 +440,43 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Chart */}
+      {/* Chart – always render so it doesn't collapse on empty data */}
       {filteredRows.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 text-center text-gray-600 dark:text-gray-300">
-          No usage data yet for the current filters.
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 mb-8">
+          {/* Empty state with chart placeholder */}
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Usage Chart</h3>
+          </div>
+          {/* Maintain chart height so layout doesn't jump */}
+          <div className="h-96 w-full flex items-center justify-center border border-dashed border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50/50 dark:bg-gray-900/20">
+            <div className="text-center px-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
+                <SearchX className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+              </div>
+              <div className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                No usage data available
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                {selectedUserId !== 'all'
+                  ? 'This user has no usage data yet. Try selecting a different user or switch back to "All users".'
+                  : selectedTeamId !== 'all'
+                    ? 'No usage data found for this team. Try selecting a different team or switch to "All teams".'
+                    : 'No usage data has been recorded yet. Upload CSV data or set up an API connection to get started.'}
+              </div>
+            </div>
+          </div>
+          {/* Empty model breakdown table placeholder */}
+          <div className="mt-6 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Model Breakdown</h4>
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 mb-3">
+                <BarChart3 className="w-6 h-6 text-gray-400 dark:text-gray-500" />
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                No model data to display
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <CursorUsageChart

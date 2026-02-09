@@ -340,9 +340,7 @@ async function probeSubcollection(userId: string, subcollection: string): Promis
     const msg = String(e?.message || e?.code || e)
     return { ok: false, error: msg }
   }
-}
-
-export async function getUserUsageDiagnostics(userId: string): Promise<UsageDiagnostics> {
+}export async function getUserUsageDiagnostics(userId: string): Promise<UsageDiagnostics> {
   // Note: projectId is available on underlying app config, but db doesn't expose it cleanly.
   const checks = await Promise.all([
     probeSubcollection(userId, 'usageEvents').then((r) => ({ collection: 'users/{uid}/usageEvents', ...r })),
@@ -356,4 +354,3 @@ export async function getUserUsageDiagnostics(userId: string): Promise<UsageDiag
 
   return { checks }
 }
-

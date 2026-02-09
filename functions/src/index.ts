@@ -93,11 +93,13 @@ export { createTeam } from './teams/createTeam'
 export { addTeamMember } from './teams/addTeamMember'
 export { removeTeamMember } from './teams/260205_1650_removeTeamMember'
 export { createInvitation, resendInvitation, revokeInvitation, acceptInvitationByToken } from './invitations/invitations'
+export { updateOrganizationMemberDisplayName, removeOrganizationMember } from './members/260206_0222_manageOrganizationMembers'
 export { testApiConnection, addApiConnection, syncApiConnection, scheduledApiSync } from './api/apiConnections'
 export { ingestUsageEventsFromCursorCsv } from './usage/ingestUsageEventsFromCursorCsv'
 export { ingestUsageEventsFromCcusageDailyJson } from './usage/ingestUsageEventsFromCcusageDailyJson'
 export { materializeOrgUsageEvents } from './usage/materializeOrgUsageEvents'
 export { refreshPricingCatalog } from './pricing/refreshPricingCatalog'
+export { refreshCurrencyRates, refreshCurrencyRatesManual } from './currency/260205_refreshCurrencyRates'
 
 // Export Stripe webhook
 export { stripeWebhook } from './webhooks/stripeWebhook'

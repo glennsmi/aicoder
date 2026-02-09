@@ -102,7 +102,7 @@ function buildFingerprint(input: {
 }
 
 export const ingestUsageEventsFromCursorCsv = onCall(
-  { cors: true },
+  { cors: true, timeoutSeconds: 300 },
   async (request): Promise<IngestCursorCsvResponse> => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Authentication required')
@@ -205,7 +205,7 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       }
     }
 
-    const bulkWriter = db.bulkWriter()
+    const bulkWriter = db.bulkWriter({ throttling: true })
 
     let saved = 0
     let duplicates = 0
@@ -214,19 +214,33 @@ export const ingestUsageEventsFromCursorCsv = onCall(
     const models = new Set<string>()
 
     bulkWriter.onWriteError((err) => {
-      // Continue on already-exists duplicates.
       // Firestore Admin errors expose status as a number or string depending on environment.
       const status: any = (err as any).status || (err as any).code
+      const attempts: number = (err as any).failedAttempts ?? 0
+
+      // Continue on already-exists duplicates (no retry needed).
       if (status === 6 || status === 'ALREADY_EXISTS' || status === 'already-exists') {
         duplicates += 1
-        return true
+        return false // don't retry, it's a known duplicate
       }
-      console.error('BulkWriter error:', err)
-      // For non-duplicate errors, stop retrying and surface the failure.
+
+      // Retry transient errors up to the BulkWriter's internal limit (default 10).
+      // DEADLINE_EXCEEDED (4), UNAVAILABLE (14), RESOURCE_EXHAUSTED (8), ABORTED (10)
+      const TRANSIENT_CODES = new Set([4, 8, 10, 14, 'DEADLINE_EXCEEDED', 'UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'ABORTED'])
+      if (TRANSIENT_CODES.has(status) && attempts < 10) {
+        console.warn(`BulkWriter transient error (code=${status}, attempt=${attempts}), retrying...`)
+        return true // retry
+      }
+
+      console.error('BulkWriter permanent error:', err)
       return false
     })
 
-    for (let i = 0; i < rows.length; i++) {
+    // Process newest rows first so genuinely new data is written before we
+    // spend time on older rows that likely already exist (and would be duplicates).
+    // This maximises the chance of persisting the latest data even if the
+    // function hits a timeout or transient Firestore errors.
+    for (let i = rows.length - 1; i >= 0; i--) {
       const row = rows[i]
 
       const eventAtMs = Number(row.timestamp)

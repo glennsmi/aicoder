@@ -326,8 +326,16 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                           <div className="font-semibold mb-2 text-primary-300">Input Token Breakdown</div>
                           <div className="space-y-1">
                             <div className="flex justify-between">
-                              <span className="text-gray-300">Input Tokens:</span>
+                              <span className="text-gray-200">Input Tokens (Total):</span>
+                              <span className="font-medium text-gray-200">{formatTokens(totalInputTokens)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Input (w/o cache write):</span>
                               <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithoutCacheWrite)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-orange-300">Cache Write:</span>
+                              <span className="font-medium text-orange-300">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-green-300">Output Tokens:</span>
@@ -335,11 +343,7 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                             </div>
                             <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 font-semibold">
                               <span className="text-gray-200">I/O Subtotal:</span>
-                              <span className="font-medium text-gray-200">{formatTokens(row.tokenBreakdown.inputWithoutCacheWrite + row.tokenBreakdown.output)}</span>
-                            </div>
-                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                              <span className="text-orange-300">Cache Write:</span>
-                              <span className="font-medium text-orange-300">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                              <span className="font-medium text-gray-200">{formatTokens(totalInputTokens + row.tokenBreakdown.output)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-purple-300">Cache Read:</span>
@@ -386,8 +390,16 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                           <div className="font-semibold mb-2 text-primary-300">Complete Token Breakdown</div>
                           <div className="space-y-1">
                             <div className="flex justify-between text-blue-200">
-                              <span>Input Tokens:</span>
+                              <span>Input Tokens (Total):</span>
+                              <span className="font-medium">{formatTokens(totalInputTokens)}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-200/90">
+                              <span>Input (w/o cache write):</span>
                               <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithoutCacheWrite)}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
+                              <span>Cache Write:</span>
+                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
                             </div>
                             <div className="flex justify-between text-green-200">
                               <span>Output Tokens:</span>
@@ -395,11 +407,7 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                             </div>
                             <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-gray-200 font-semibold">
                               <span>I/O Subtotal:</span>
-                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithoutCacheWrite + row.tokenBreakdown.output)}</span>
-                            </div>
-                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
-                              <span>Cache Write:</span>
-                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                              <span className="font-medium">{formatTokens(totalInputTokens + row.tokenBreakdown.output)}</span>
                             </div>
                             <div className="flex justify-between text-purple-200">
                               <span>Cache Read:</span>
@@ -411,7 +419,7 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                             </div>
                           </div>
                           <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-700">
-                            💡 I/O: {formatTokens(row.tokenBreakdown.inputWithoutCacheWrite + row.tokenBreakdown.output)} | Cache Write: {formatTokens(row.tokenBreakdown.inputWithCacheWrite)} | Cache Read: {formatTokens(row.tokenBreakdown.cacheRead)}
+                            💡 I/O: {formatTokens(totalInputTokens + row.tokenBreakdown.output)} | Cache Write: {formatTokens(row.tokenBreakdown.inputWithCacheWrite)} | Cache Read: {formatTokens(row.tokenBreakdown.cacheRead)}
                           </div>
                         </HoverPopover>
                       ) : (

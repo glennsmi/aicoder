@@ -125,8 +125,26 @@ const handleTokensImport = async (
   console.log('🎯 CursorCostsPage: handleTokensImport called with', rows.length, 'rows and summary:', summary)
   console.log('🎯 CursorCostsPage: First few rows:', rows.slice(0, 3))
 
-  // Always update the UI immediately (keep the "drop → instant chart" experience).
-  setTempDataV2(rows)
+  // Merge new CSV rows into existing data so previously-loaded Firestore records
+  // remain visible while the background ingestion runs. Deduplicate by fingerprint
+  // (timestamp + model + tokens) to avoid double-counting.
+  setTempDataV2((prev) => {
+    if (prev.length === 0) return rows
+
+    const existing = new Map<string, CursorUsageV2>()
+    for (const r of prev) {
+      const key = `${r.timestamp}-${r.model}-${r.tokens}`
+      existing.set(key, r)
+    }
+    // New rows overwrite existing duplicates (fresher parse)
+    for (const r of rows) {
+      const key = `${r.timestamp}-${r.model}-${r.tokens}`
+      existing.set(key, r)
+    }
+    const merged = Array.from(existing.values())
+    merged.sort((a, b) => a.timestamp - b.timestamp)
+    return merged
+  })
   
   if (currentUser) {
     try {
@@ -153,8 +171,14 @@ const handleTokensImport = async (
             : [{ fileName: 'cursor.csv', fileHash: '', rows }]
 
           for (const batch of batches) {
-            for (let i = 0; i < batch.rows.length; i += chunkSize) {
-              const chunk = batch.rows.slice(i, i + chunkSize)
+            // Send newest rows first so the most recent (likely unique) data is
+            // persisted even if later chunks hit a timeout or transient error.
+            // Rows are sorted ascending, so we chunk from the end backwards.
+            const total = batch.rows.length
+            for (let end = total; end > 0; end -= chunkSize) {
+              const start = Math.max(0, end - chunkSize)
+              const chunk = batch.rows.slice(start, end)
+
               const result = await ingest({
                 importId,
                 fileName: batch.fileName,
@@ -198,8 +222,23 @@ const handleTokensImport = async (
   ) => {
     console.log('🎯 CursorCostsPage: handleCcusageDailyImport called with', rows.length, 'rows and summary:', summary)
 
-    // Show immediately
-    setTempDataV2(rows)
+    // Merge new rows into existing data (same logic as handleTokensImport)
+    setTempDataV2((prev) => {
+      if (prev.length === 0) return rows
+
+      const existing = new Map<string, CursorUsageV2>()
+      for (const r of prev) {
+        const key = `${r.timestamp}-${r.model}-${r.tokens}`
+        existing.set(key, r)
+      }
+      for (const r of rows) {
+        const key = `${r.timestamp}-${r.model}-${r.tokens}`
+        existing.set(key, r)
+      }
+      const merged = Array.from(existing.values())
+      merged.sort((a, b) => a.timestamp - b.timestamp)
+      return merged
+    })
 
     if (!currentUser) return
 
@@ -224,8 +263,12 @@ const handleTokensImport = async (
             : [{ fileName: 'ccusage.json', fileHash: '', rows }]
 
           for (const batch of batches) {
-            for (let i = 0; i < batch.rows.length; i += chunkSize) {
-              const chunk = batch.rows.slice(i, i + chunkSize)
+            // Newest rows first (same rationale as cursor CSV import)
+            const total = batch.rows.length
+            for (let end = total; end > 0; end -= chunkSize) {
+              const start = Math.max(0, end - chunkSize)
+              const chunk = batch.rows.slice(start, end)
+
               const result = await ingest({
                 importId,
                 fileName: batch.fileName,

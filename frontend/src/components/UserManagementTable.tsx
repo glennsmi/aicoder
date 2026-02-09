@@ -1,24 +1,33 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
-// import { OrganizationMember } from '@shared' // unused for now
+import { OrganizationMember } from '@shared'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../config/firebaseApp'
 import { useOrgInvitations } from '../hooks/useOrgInvitations'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function UserManagementTable() {
   const { organization, members, teams, canManageUsers } = useOrganization()
+  const { user } = useAuth()
   const organizationId = organization?.id || null
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<'admin' | 'team_manager' | 'member'>('member')
   const [inviteTeamId, setInviteTeamId] = useState('')
   const [loading, setLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [showPendingInvites, setShowPendingInvites] = useState(false)
+  const [actionsOpenForUserId, setActionsOpenForUserId] = useState<string | null>(null)
+  const [editMember, setEditMember] = useState<OrganizationMember | null>(null)
+  const [editDisplayName, setEditDisplayName] = useState('')
+  const [memberToRemove, setMemberToRemove] = useState<OrganizationMember | null>(null)
+
+  const canManage = canManageUsers()
 
   const {
     invitations: pendingInvites,
@@ -28,6 +37,21 @@ export default function UserManagementTable() {
     organizationId,
     'pending'
   )
+
+  useEffect(() => {
+    if (!actionsOpenForUserId) return
+
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      const inside = target.closest(`[data-actions-root="${actionsOpenForUserId}"]`)
+      if (inside) return
+      setActionsOpenForUserId(null)
+    }
+
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [actionsOpenForUserId])
 
   const handleInviteUser = async () => {
     if (!inviteEmail.trim()) {
@@ -115,7 +139,67 @@ export default function UserManagementTable() {
     }
   }
 
-  if (!canManageUsers) {
+  const openEditNameModal = (member: OrganizationMember) => {
+    setError(null)
+    setSuccess(null)
+    setEditMember(member)
+    setEditDisplayName(member.displayName || '')
+  }
+
+  const handleSaveDisplayName = async () => {
+    if (!organizationId || !editMember) return
+    const displayName = editDisplayName.trim()
+    if (!displayName) {
+      setError('Please enter a name')
+      return
+    }
+
+    try {
+      setActionLoading(true)
+      setError(null)
+      setSuccess(null)
+      const fn = httpsCallable(functions, 'updateOrganizationMemberDisplayName')
+      await fn({
+        organizationId,
+        userId: editMember.userId,
+        displayName,
+      })
+      setSuccess('Name updated.')
+      setEditMember(null)
+    } catch (err: any) {
+      setError(err.message || 'Failed to update name')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const openRemoveMemberModal = (member: OrganizationMember) => {
+    setError(null)
+    setSuccess(null)
+    setMemberToRemove(member)
+  }
+
+  const handleConfirmRemoveMember = async () => {
+    if (!organizationId || !memberToRemove) return
+    try {
+      setActionLoading(true)
+      setError(null)
+      setSuccess(null)
+      const fn = httpsCallable(functions, 'removeOrganizationMember')
+      await fn({
+        organizationId,
+        userId: memberToRemove.userId,
+      })
+      setSuccess('User removed.')
+      setMemberToRemove(null)
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove user')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  if (!canManage) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500 dark:text-gray-400">
@@ -239,6 +323,7 @@ export default function UserManagementTable() {
               ) : (
                 filteredMembers.map((member) => {
                   const memberTeam = teams.find((t) => t.id === member.teamId)
+                  const isSelf = Boolean(user?.id && user.id === member.userId)
                   
                   return (
                     <tr key={member.userId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -286,11 +371,53 @@ export default function UserManagementTable() {
                         ) : '-'}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                          </svg>
-                        </button>
+                        <div className="relative inline-flex" data-actions-root={member.userId}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActionsOpenForUserId((prev) => (prev === member.userId ? null : member.userId))
+                            }
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            aria-label="Open member actions"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                              />
+                            </svg>
+                          </button>
+
+                          {actionsOpenForUserId === member.userId && (
+                            <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActionsOpenForUserId(null)
+                                  openEditNameModal(member)
+                                }}
+                                className="w-full px-4 py-2.5 text-left text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                              >
+                                Edit name
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isSelf) return
+                                  setActionsOpenForUserId(null)
+                                  openRemoveMemberModal(member)
+                                }}
+                                disabled={isSelf}
+                                className="w-full px-4 py-2.5 text-left text-sm text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={isSelf ? 'You cannot remove yourself' : undefined}
+                              >
+                                Remove user
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -481,6 +608,97 @@ export default function UserManagementTable() {
                 className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Sending...' : 'Send Invitation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Name Modal */}
+      {editMember && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-2">Edit member name</h3>
+            <p className="text-sm text-gunmetal-600 dark:text-gray-300 mb-4">
+              Updating the name for <span className="font-medium">{editMember.email}</span>
+            </p>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gunmetal-900 dark:text-white mb-2">
+                  Display name
+                </label>
+                <input
+                  type="text"
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                  placeholder="e.g. Jane Doe"
+                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gunmetal-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={() => setEditMember(null)}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveDisplayName}
+                disabled={actionLoading || !editDisplayName.trim()}
+                className="flex-1 px-4 py-2 bg-primary-500 text-gunmetal-900 font-semibold rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove User Modal */}
+      {memberToRemove && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-gunmetal-900 dark:text-white mb-2">Remove user</h3>
+            <p className="text-sm text-gunmetal-600 dark:text-gray-300 mb-4">
+              This will remove <span className="font-medium">{memberToRemove.displayName || memberToRemove.email}</span>{' '}
+              from the organization.
+            </p>
+            <div className="mb-4 p-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                They will lose access to org dashboards and data. This is intended for seat/quota management.
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={() => setMemberToRemove(null)}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gunmetal-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRemoveMember}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 border border-red-300 text-red-700 hover:bg-red-50 transition-colors font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {actionLoading ? 'Removing...' : 'Remove'}
               </button>
             </div>
           </div>

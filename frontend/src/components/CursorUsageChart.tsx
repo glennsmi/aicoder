@@ -2,6 +2,7 @@ import React, { useMemo, useState, useRef, useCallback, useEffect, useTransition
 import { createPortal } from 'react-dom'
 import { Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts'
 import * as htmlToImage from 'html-to-image';
+import { BarChart3 } from 'lucide-react'
 import { CursorUsageV2 as CursorUsage } from '@shared'
 import { cn } from '@/lib/utils'
 import { DateRangePicker } from './DateRangePicker'
@@ -9,6 +10,7 @@ import { DateRange } from 'react-day-picker'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useOrganization } from '@/contexts/OrganizationContext'
 import CurrencySelector from './CurrencySelector'
 import TimeRangeSegmentedControl from './TimeRangeSegmentedControl'
 import * as Popover from '@radix-ui/react-popover'
@@ -113,6 +115,29 @@ function HoverPopover({
   )
 }
 
+function isSplitUnknownModelName(model: string): boolean {
+  const m = (model || '').toLowerCase().trim()
+  // Cursor CSV model names we’ve seen: "gpt-5.2"
+  // Also cover common OpenAI and Gemini prefixes where we treat the input/cache-write split as unknown.
+  return (
+    m.startsWith('gpt') ||
+    m.startsWith('o1') ||
+    m.startsWith('o3') ||
+    m.startsWith('o4') ||
+    m.includes('openai') ||
+    m.startsWith('gemini') ||
+    m.includes('google') ||
+    m.includes('vertex')
+  )
+}
+
+function percentOfTotal(part: number, total: number): string | null {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return null
+  const pct = (part / total) * 100
+  if (!Number.isFinite(pct)) return null
+  return `${pct.toFixed(1)}%`
+}
+
 export default function CursorUsageChart({
   data,
   isLoading = false,
@@ -137,6 +162,7 @@ export default function CursorUsageChart({
   const chartRef = useRef<HTMLDivElement>(null)
   const entireChartRef = useRef<HTMLDivElement>(null);
   const { currentUser } = useAuth()
+  const { organization } = useOrganization()
   const { userCurrency, formatCurrency, convertFromUSD } = useCurrency()
   const { actualTheme } = useTheme()
   const [showCurrencySelectorModal, setShowCurrencySelectorModal] = useState(false)
@@ -149,12 +175,17 @@ export default function CursorUsageChart({
   const [isHighlightPending, startHighlightTransition] = useTransition()
   const [referenceModel, setReferenceModel] = useState<string | null>(null)
 
+  const useWhiteLabelBranding = Boolean(organization?.settings?.reports?.whiteLabelBranding)
+  const orgDisplayName = (organization?.name || '').trim()
+
   // Crossfilter-inspired: shrink working set early (hour buckets by model).
   const hourlyData = useMemo(() => aggregateCursorUsageV2ToHourlyByModel(data), [data])
 
   type ModelBreakdownSortKey =
     | 'model'
     | 'inputTokens'
+    | 'inputWithoutCacheWriteTokens'
+    | 'inputWithCacheWriteTokens'
     | 'cacheReadTokens'
     | 'outputTokens'
     | 'totalTokens'
@@ -1506,13 +1537,16 @@ export default function CursorUsageChart({
       {/* Chart */}
       <div className="h-96 w-full" ref={chartRef}>
         {!hasDataInWindow && (
-          <div className="h-full w-full flex items-center justify-center border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-            <div className="text-center px-6">
-              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <div className="h-full w-full flex items-center justify-center border border-dashed border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50/50 dark:bg-gray-900/20 transition-all duration-300">
+            <div className="text-center px-6 animate-[fadeIn_0.3s_ease-in-out]">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-700 mb-3">
+                <BarChart3 className="w-7 h-7 text-gray-400 dark:text-gray-500" />
+              </div>
+              <div className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
                 No data in this window
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
-                Your newest saved data looks historical. Use ‹ to page back, or switch to Custom.
+              <div className="text-xs text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                Your data may be outside the selected time range. Use ‹ to page back, or switch to Custom.
               </div>
             </div>
           </div>
@@ -1571,7 +1605,7 @@ export default function CursorUsageChart({
               
               {/* Create stacked bars for each model - Input (bottom) and Output (top) */}
               {metricMode === 'tokens' ? (
-                modelDefs.map((d) => {
+                modelDefs.map((d, i) => {
                   const isDimmed = selectedModelForChart !== null && selectedModelForChart !== d.name
                   return (
                     <React.Fragment key={d.key}>
@@ -1583,6 +1617,10 @@ export default function CursorUsageChart({
                         fill={d.inputColor}
                         name={`${d.name} (Input)`}
                         opacity={isDimmed ? 0.3 : 1}
+                        isAnimationActive={true}
+                        animationDuration={600}
+                        animationBegin={i * 50}
+                        animationEasing="ease-out"
                         style={{
                           transition: 'opacity 0.2s ease-in-out'
                         }}
@@ -1595,6 +1633,10 @@ export default function CursorUsageChart({
                         fill={d.outputColor}
                         name={`${d.name} (Output)`}
                         opacity={isDimmed ? 0.3 : 1}
+                        isAnimationActive={true}
+                        animationDuration={600}
+                        animationBegin={i * 50}
+                        animationEasing="ease-out"
                         style={{
                           transition: 'opacity 0.2s ease-in-out'
                         }}
@@ -1604,7 +1646,7 @@ export default function CursorUsageChart({
                 })
               ) : (
                 // For costs mode, use single bars
-                modelDefs.map((d) => {
+                modelDefs.map((d, i) => {
                   const isDimmed = selectedModelForChart !== null && selectedModelForChart !== d.name
                   
                   return (
@@ -1616,6 +1658,10 @@ export default function CursorUsageChart({
                       fill={d.baseColor}
                       name={d.name}
                       opacity={isDimmed ? 0.3 : 0.8}
+                      isAnimationActive={true}
+                      animationDuration={600}
+                      animationBegin={i * 50}
+                      animationEasing="ease-out"
                       style={{
                         transition: 'opacity 0.2s ease-in-out'
                       }}
@@ -1826,11 +1872,37 @@ export default function CursorUsageChart({
                   <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
                     <button
                       type="button"
-                      onClick={() => toggleModelBreakdownSort('inputTokens')}
+                      onClick={() => toggleModelBreakdownSort('inputWithoutCacheWriteTokens')}
                       className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
-                      title="Sort by input tokens"
+                      title="Sort by input tokens (non-cache)"
                     >
                       <span>Input Tokens</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'inputWithoutCacheWriteTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('inputWithCacheWriteTokens')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by cache write tokens"
+                    >
+                      <span>Cache Write</span>
+                      <span className="text-[10px] opacity-70">
+                        {modelBreakdownSortKey === 'inputWithCacheWriteTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
+                      </span>
+                    </button>
+                  </th>
+                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300 border-l border-gray-200 dark:border-gray-600">
+                    <button
+                      type="button"
+                      onClick={() => toggleModelBreakdownSort('inputTokens')}
+                      className="w-full inline-flex items-center justify-end gap-1 hover:text-gray-900 dark:hover:text-white"
+                      title="Sort by total input tokens (input + cache write)"
+                    >
+                      <span>Input Total</span>
                       <span className="text-[10px] opacity-70">
                         {modelBreakdownSortKey === 'inputTokens' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
                       </span>
@@ -1931,18 +2003,34 @@ export default function CursorUsageChart({
                 </tr>
               </thead>
               <tbody>
+                {sortedModelBreakdownRows.length === 0 && (
+                  <tr>
+                    <td colSpan={13} className="py-10 text-center">
+                      <div className="flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-in-out]">
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 mb-2">
+                          <BarChart3 className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">No model data to display</div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {sortedModelBreakdownRows.map((row, idx) => {
                     const model = row.model
+                    const isSplitUnknown = isSplitUnknownModelName(model)
                     
                     return (
                       <tr 
                         key={model} 
                         className={cn(
-                          "border-b border-gray-100 dark:border-gray-700 transition-colors duration-150 cursor-pointer h-10",
+                          "border-b border-gray-100 dark:border-gray-700 transition-all duration-200 cursor-pointer h-10",
                           selectedModel === model
                             ? "bg-secondary-900 text-white"
                             : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
                         )}
+                        style={{
+                          animation: `fadeInRow 0.3s ease-out ${idx * 40}ms both`,
+                        }}
                         onClick={() => toggleSelectedModel(model)}
                         title="Click to highlight this model on the chart"
                       >
@@ -1983,6 +2071,66 @@ export default function CursorUsageChart({
                           "py-2 px-3 text-right align-middle",
                           selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
                         )}>
+                          {isSplitUnknown ? (
+                            '—'
+                          ) : row.inputWithoutCacheWriteTokens > 0 ? (
+                            <HoverPopover
+                              trigger={(
+                                <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                                  <span>{row.inputWithoutCacheWriteTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                  <svg className="w-3 h-3 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </span>
+                              )}
+                              side="top"
+                              align="end"
+                              contentClassName="bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-64"
+                            >
+                              <div className="font-semibold mb-2 text-blue-300">Input Token Details</div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-gray-300">Input (w/o cache write):</span>
+                                  <span className="font-medium">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-orange-300">Cache Write:</span>
+                                  <span className="font-medium text-orange-300">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-green-300">Output Tokens:</span>
+                                  <span className="font-medium text-green-300">{row.outputTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 font-semibold">
+                                  <span className="text-gray-200">I/O Subtotal:</span>
+                                  <span className="font-medium text-gray-200">{(row.inputWithoutCacheWriteTokens + row.outputTokens).toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-purple-300">Cache Read:</span>
+                                  <span className="font-medium text-purple-300">{row.cacheReadTokens.toLocaleString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
+                                  <span>Total:</span>
+                                  <span>{row.totalTokens.toLocaleString('en-US')}</span>
+                                </div>
+                              </div>
+                            </HoverPopover>
+                          ) : (
+                            <span className="inline-flex items-center justify-end gap-1 w-full text-right">
+                              <span>{row.inputWithoutCacheWriteTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className={cn(
+                          "py-2 px-3 text-right tabular-nums align-middle",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
+                          {isSplitUnknown ? '—' : row.inputWithCacheWriteTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </td>
+                        <td className={cn(
+                          "py-2 px-3 text-right align-middle border-l border-gray-100 dark:border-gray-700",
+                          selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
+                        )}>
                           {row.inputTokens > 0 ? (
                             <HoverPopover
                               trigger={(
@@ -1997,38 +2145,51 @@ export default function CursorUsageChart({
                               align="end"
                               contentClassName="bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-64"
                             >
-                              <div className="font-semibold mb-2 text-blue-300">Input Token Details</div>
+                              <div className="font-semibold mb-2 text-primary-300">Input Total</div>
                               <div className="space-y-1">
-                                <div className="flex justify-between font-semibold">
-                                  <span className="text-gray-200">Input Tokens:</span>
-                                  <span className="font-medium text-gray-200">{row.inputTokens.toLocaleString('en-US')}</span>
-                                </div>
-                                <div className="flex justify-between pl-3">
-                                  <span className="text-gray-400">Non-cache:</span>
-                                  <span className="font-medium text-gray-300">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
-                                </div>
-                                <div className="flex justify-between pl-3">
-                                  <span className="text-orange-300">Cache Write:</span>
-                                  <span className="font-medium text-orange-300">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                                  <span className="text-green-300">Output Tokens:</span>
-                                  <span className="font-medium text-green-300">{row.outputTokens.toLocaleString('en-US')}</span>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-300">Input (w/o cache write):</span>
+                                  <span className="font-medium">
+                                    {isSplitUnknown ? '—' : row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between">
-                                  <span className="text-purple-300">Cache Read:</span>
-                                  <span className="font-medium text-purple-300">{row.cacheReadTokens.toLocaleString('en-US')}</span>
+                                  <span className="text-orange-300">Cache Write:</span>
+                                  <span className="font-medium text-orange-300">
+                                    {isSplitUnknown ? '—' : row.inputWithCacheWriteTokens.toLocaleString('en-US')}
+                                  </span>
                                 </div>
-                                <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
-                                  <span>Total:</span>
-                                  <span>{row.totalTokens.toLocaleString('en-US')}</span>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                                  <span className="text-gray-200 font-semibold">Input Tokens (Total):</span>
+                                  <span className="font-semibold text-gray-200">
+                                    {row.inputTokens.toLocaleString('en-US')}
+                                    {percentOfTotal(row.inputTokens, row.totalTokens) && (
+                                      <span className="ml-2 text-[10px] text-gray-400 font-normal">
+                                        ({percentOfTotal(row.inputTokens, row.totalTokens)})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-600 pt-1 mt-1">
+                                  <span className="text-purple-300">Cache Read:</span>
+                                  <span className="font-medium text-purple-300">
+                                    {row.cacheReadTokens.toLocaleString('en-US')}
+                                    {percentOfTotal(row.cacheReadTokens, row.totalTokens) && (
+                                      <span className="ml-2 text-[10px] text-gray-400 font-normal">
+                                        ({percentOfTotal(row.cacheReadTokens, row.totalTokens)})
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                               </div>
+                              {isSplitUnknown && (
+                                <div className="mt-2 pt-2 border-t border-gray-700 text-gray-300">
+                                  Showing input as total only.
+                                </div>
+                              )}
                             </HoverPopover>
                           ) : (
-                            <span className="inline-flex items-center justify-end gap-1 w-full text-right">
-                              <span>{row.inputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                            </span>
+                            <span>{row.inputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                           )}
                         </td>
                         <td className={cn(
@@ -2063,31 +2224,68 @@ export default function CursorUsageChart({
                             >
                               <div className="font-semibold mb-2 text-primary-300">Complete Breakdown</div>
                               <div className="space-y-1">
-                                <div className="flex justify-between text-blue-200 font-semibold">
-                                  <span>Input Tokens:</span>
-                                  <span className="font-medium">{row.inputTokens.toLocaleString('en-US')}</span>
+                                <div className="flex justify-between text-gray-200/90">
+                                  <span>Input (w/o cache write):</span>
+                                  <span className="font-medium">{isSplitUnknown ? '—' : row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="flex justify-between pl-3 text-gray-400">
-                                  <span>Non-cache:</span>
-                                  <span className="font-medium text-gray-300">{row.inputWithoutCacheWriteTokens.toLocaleString('en-US')}</span>
-                                </div>
-                                <div className="flex justify-between pl-3 text-orange-200">
+                                <div className="flex justify-between text-orange-200">
                                   <span>Cache Write:</span>
-                                  <span className="font-medium">{row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
+                                  <span className="font-medium">{isSplitUnknown ? '—' : row.inputWithCacheWriteTokens.toLocaleString('en-US')}</span>
                                 </div>
-                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-green-200">
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-blue-200 font-semibold">
+                                  <span>Input Tokens (Total):</span>
+                                  <span className="font-medium">
+                                    {row.inputTokens.toLocaleString('en-US')}
+                                    {percentOfTotal(row.inputTokens, row.totalTokens) && (
+                                      <span className="ml-2 text-[10px] text-gray-400 font-normal">
+                                        ({percentOfTotal(row.inputTokens, row.totalTokens)})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between text-green-200">
                                   <span>Output Tokens:</span>
-                                  <span className="font-medium">{row.outputTokens.toLocaleString('en-US')}</span>
+                                  <span className="font-medium">
+                                    {row.outputTokens.toLocaleString('en-US')}
+                                    {percentOfTotal(row.outputTokens, row.totalTokens) && (
+                                      <span className="ml-2 text-[10px] text-gray-400 font-normal">
+                                        ({percentOfTotal(row.outputTokens, row.totalTokens)})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-gray-200 font-semibold">
+                                  <span>I/O Subtotal:</span>
+                                  <span className="font-medium">
+                                    {(row.inputTokens + row.outputTokens).toLocaleString('en-US')}
+                                    {percentOfTotal(row.inputTokens + row.outputTokens, row.totalTokens) && (
+                                      <span className="ml-2 text-[10px] text-gray-400 font-normal">
+                                        ({percentOfTotal(row.inputTokens + row.outputTokens, row.totalTokens)})
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between text-purple-200">
                                   <span>Cache Read:</span>
-                                  <span className="font-medium">{row.cacheReadTokens.toLocaleString('en-US')}</span>
+                                  <span className="font-medium">
+                                    {row.cacheReadTokens.toLocaleString('en-US')}
+                                    {percentOfTotal(row.cacheReadTokens, row.totalTokens) && (
+                                      <span className="ml-2 text-[10px] text-gray-400 font-normal">
+                                        ({percentOfTotal(row.cacheReadTokens, row.totalTokens)})
+                                      </span>
+                                    )}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between border-t border-gray-600 pt-1 mt-1 font-bold">
                                   <span>Total:</span>
                                   <span>{row.totalTokens.toLocaleString('en-US')}</span>
                                 </div>
                               </div>
+                              {isSplitUnknown && (
+                                <div className="mt-2 pt-2 border-t border-gray-700 text-gray-300">
+                                  Showing input as total only.
+                                </div>
+                              )}
                             </HoverPopover>
                           ) : (
                             <span>{row.totalTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
@@ -2150,14 +2348,36 @@ export default function CursorUsageChart({
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     {filteredData.reduce((sum, usage) => {
                       if (usage.tokenBreakdown) {
-                        return sum + usage.tokenBreakdown.inputWithCacheWrite + usage.tokenBreakdown.inputWithoutCacheWrite
+                        if (isSplitUnknownModelName(usage.model)) return sum
+                        return sum + (usage.tokenBreakdown.inputWithoutCacheWrite || 0)
                       }
                       return sum
                     }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     {filteredData.reduce((sum, usage) => {
-                      if (usage.tokenBreakdown) return sum + usage.tokenBreakdown.cacheRead
+                      if (usage.tokenBreakdown) {
+                        if (isSplitUnknownModelName(usage.model)) return sum
+                        return sum + (usage.tokenBreakdown.inputWithCacheWrite || 0)
+                      }
+                      return sum
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="py-3 px-3 text-right text-gray-900 dark:text-white border-l border-gray-200 dark:border-gray-600">
+                    {filteredData.reduce((sum, usage) => {
+                      if (usage.tokenBreakdown) {
+                        return (
+                          sum +
+                          (usage.tokenBreakdown.inputWithCacheWrite || 0) +
+                          (usage.tokenBreakdown.inputWithoutCacheWrite || 0)
+                        )
+                      }
+                      return sum
+                    }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
+                    {filteredData.reduce((sum, usage) => {
+                      if (usage.tokenBreakdown) return sum + (usage.tokenBreakdown.cacheRead || 0)
                       return sum
                     }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
@@ -2293,20 +2513,34 @@ export default function CursorUsageChart({
       {/* Add padding below the summary cards for copy image */}
       <div className="copy-padding pb-6 hidden"></div>
 
-      {/* Source Band - AI Coder Guru Dark Blue (hidden in UI, shown in copy) */}
+      {/* Source Band (hidden in UI, shown in copy) */}
       <div className="source-band bg-secondary-900 text-white py-3 px-6 -mx-6 -mb-6 mt-4 hidden" style={{ borderBottomLeftRadius: '0.75rem', borderBottomRightRadius: '0.75rem' }}>
         <div className="flex items-center justify-center">
           <div className="flex items-center space-x-2">
-            <img src="/logos/AI Coder Guru Symbol.svg" alt="AI Coder Guru" className="w-5 h-5" />
-            <span className="text-sm font-medium">Chart generated by</span>
-            <a 
-              href="https://aicoder.guru/" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-white hover:text-primary-300 font-semibold underline transition-colors"
-            >
-              aicoder.guru
-            </a>
+            {useWhiteLabelBranding ? (
+              <>
+                <span className="text-sm font-medium">
+                  {orgDisplayName ? 'Report generated for' : 'Report generated'}
+                </span>
+                {orgDisplayName && (
+                  <span className="text-sm font-semibold">
+                    {orgDisplayName}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="text-sm font-medium">Chart generated by</span>
+                <a
+                  href="https://fueld.ai/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-white hover:text-primary-300 font-semibold underline transition-colors"
+                >
+                  Fueld
+                </a>
+              </>
+            )}
           </div>
         </div>
       </div>

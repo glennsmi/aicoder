@@ -1,5 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useAuth } from '../contexts/AuthContext'
 import { 
   AIProvider, 
   APIConnection, 
@@ -9,11 +10,9 @@ import {
   SyncConnectionRequest,
   SyncResult
 } from '@shared'
-import { db } from '../config/firebase'
+import { db, functions } from '../config/firebaseApp'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
-import { getFunctions, httpsCallable } from 'firebase/functions'
-
-const functions = getFunctions()
+import { httpsCallable } from 'firebase/functions'
 
 const HelpDetails = ({
   title,
@@ -280,6 +279,7 @@ const AVAILABLE_PROVIDERS: {
 
 export default function APIConnectionManager() {
   const { organization } = useOrganization()
+  const { currentUser, user } = useAuth()
   const [connections, setConnections] = useState<APIConnection[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState<AIProvider | null>(null)
@@ -307,11 +307,17 @@ export default function APIConnectionManager() {
   // Load connections from Firestore
   useEffect(() => {
     if (!organization?.id) return
+    if (!currentUser?.uid) return
 
-    const q = query(
-      collection(db, 'apiConnections'),
-      where('organizationId', '==', organization.id)
-    )
+    // Members should be able to connect *their own* APIs without seeing anyone else's credentials.
+    // Admins can see org-wide connections; others see only those they created.
+    const constraints = [
+      where('organizationId', '==', organization.id),
+    ] as any[]
+    if (user?.currentRole !== 'admin') {
+      constraints.push(where('createdBy', '==', currentUser.uid))
+    }
+    const q = query(collection(db, 'apiConnections'), ...constraints)
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedConnections = snapshot.docs.map(doc => ({
@@ -322,7 +328,7 @@ export default function APIConnectionManager() {
     })
 
     return () => unsubscribe()
-  }, [organization?.id])
+  }, [organization?.id, currentUser?.uid, user?.currentRole])
 
   const handleTestConnection = async () => {
     if (!selectedProvider) return

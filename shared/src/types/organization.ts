@@ -35,11 +35,20 @@ export interface BillingPlan {
 /**
  * Organization Settings
  */
+export interface OrganizationReportSettings {
+  /**
+   * If true, exported charts/reports should use organization branding (white-label).
+   * If false/undefined, use Fueld branding.
+   */
+  whiteLabelBranding?: boolean;
+}
+
 export interface OrganizationSettings {
   apiIntegrations: string[]; // List of enabled integration provider IDs
   dataRetentionDays: number; // Number of days to retain usage data
   allowMemberInvites?: boolean; // Whether members can invite others
   requireTwoFactor?: boolean; // Whether 2FA is required
+  reports?: OrganizationReportSettings;
 }
 
 /**
@@ -88,6 +97,9 @@ export const OrganizationSettingsSchema = z.object({
   dataRetentionDays: z.number().int().positive(),
   allowMemberInvites: z.boolean().optional(),
   requireTwoFactor: z.boolean().optional(),
+  reports: z.object({
+    whiteLabelBranding: z.boolean().optional(),
+  }).optional(),
 });
 
 export const OrganizationSchema = z.object({
