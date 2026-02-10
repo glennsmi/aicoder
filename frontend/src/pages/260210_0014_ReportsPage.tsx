@@ -17,6 +17,14 @@ function calculateCostPerMillionOutputTokens(costUsd: number, outputTokens: numb
   return outputTokens > 0 ? (costUsd / outputTokens) * 1_000_000 : 0
 }
 
+function formatPdfNumber(value: number) {
+  return Math.round(value).toLocaleString('en-US')
+}
+
+function formatPdfUsd(value: number) {
+  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function toInputDate(ms: number) {
   return new Date(ms).toISOString().slice(0, 10)
 }
@@ -413,9 +421,9 @@ export default function ReportsPage() {
           rows: teamLeaderboard.slice(0, 20).map((row, index) => ([
             index + 1,
             row.teamName,
-            Math.round(row.tokens),
-            Number(row.costUsd.toFixed(2)),
-            row.events,
+            formatPdfNumber(row.tokens),
+            formatPdfUsd(row.costUsd),
+            formatPdfNumber(row.events),
           ])),
         },
         {
@@ -424,9 +432,9 @@ export default function ReportsPage() {
           rows: memberUsage.slice(0, 40).map((row) => ([
             row.userName,
             row.teamName,
-            Math.round(row.tokens),
-            Number(row.costUsd.toFixed(2)),
-            row.events,
+            formatPdfNumber(row.tokens),
+            formatPdfUsd(row.costUsd),
+            formatPdfNumber(row.events),
             row.lastActive,
           ])),
         },
@@ -435,16 +443,16 @@ export default function ReportsPage() {
           columns: ['Model', 'Input Tokens', 'Output Tokens', 'Total Tokens', 'Cache Read Tokens', 'Cost (USD)', 'Cost / 1M Output (USD)', 'Events'],
           rows: modelBreakdown.slice(0, 25).map((row) => ([
             row.model,
-            Math.round(row.inputTokens),
-            Math.round(row.outputTokens),
-            Math.round(row.tokens),
-            Math.round(row.cacheReadTokens),
-            Number(row.costUsd.toFixed(2)),
+            formatPdfNumber(row.inputTokens),
+            formatPdfNumber(row.outputTokens),
+            formatPdfNumber(row.tokens),
+            formatPdfNumber(row.cacheReadTokens),
+            formatPdfUsd(row.costUsd),
             (() => {
               const costPerMillionOutputTokensUsd = calculateCostPerMillionOutputTokens(row.costUsd, row.outputTokens)
-              return costPerMillionOutputTokensUsd > 0 ? Number(costPerMillionOutputTokensUsd.toFixed(2)) : '—'
+              return costPerMillionOutputTokensUsd > 0 ? formatPdfUsd(costPerMillionOutputTokensUsd) : '—'
             })(),
-            row.events,
+            formatPdfNumber(row.events),
           ])),
         },
       ],

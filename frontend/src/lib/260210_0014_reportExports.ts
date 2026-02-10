@@ -96,7 +96,7 @@ export async function exportPdfReport(input: PdfExportInput) {
   // Cover page styling
   doc.setFillColor(18, 76, 90)
   doc.rect(0, 0, pageWidth, pageHeight, 'F')
-  doc.setFillColor(247, 92, 3)
+  doc.setFillColor(100, 191, 164)
   doc.rect(0, pageHeight - 56, pageWidth, 56, 'F')
 
   const logoDataUrl = await imageSourceToPngDataUrl('/logos/AI Coder Guru Symbol.svg')
