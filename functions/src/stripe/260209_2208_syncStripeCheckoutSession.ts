@@ -1,4 +1,4 @@
-npm run BucketBuilder/**
+/**
  * Manual Stripe checkout sync (fallback when webhooks misconfigured/delayed).
  *
  * Given a Stripe Checkout Session ID, retrieve the subscription/price from Stripe,
@@ -8,7 +8,6 @@ npm run BucketBuilder/**
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import * as admin from 'firebase-admin'
 import { getStripeClient, determineTierFromStripePrice } from '../utils/stripe'
-import { BucketBuilder } from 'firebase-functions/v1/storage'
 
 const db = admin.firestore()
 const FieldValue = admin.firestore.FieldValue

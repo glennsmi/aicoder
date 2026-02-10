@@ -47,7 +47,8 @@ function getMailerSendApiKey(apiKeyOverride?: string): string {
 export async function sendWelcomeEmail(
   recipientEmail: string,
   recipientName?: string,
-  tier: string = 'novice'
+  tier: string = 'novice',
+  planMetadata?: Record<string, unknown>
 ): Promise<boolean> {
   try {
     console.log(`Sending welcome email to ${recipientEmail} (${tier} tier)`)
@@ -60,9 +61,9 @@ export async function sendWelcomeEmail(
     const emailParams = new EmailParams()
       .setFrom(defaultSender)
       .setTo([new Recipient(recipientEmail, recipientName)])
-      .setSubject('Welcome to AICoder.Guru! 🥋')
-      .setHtml(getWelcomeEmailHTML(recipientName || 'there', tier))
-      .setText(getWelcomeEmailText(recipientName || 'there', tier))
+      .setSubject('Welcome to AICoder.Guru')
+      .setHtml(getWelcomeEmailHTML(recipientName || 'there', tier, planMetadata))
+      .setText(getWelcomeEmailText(recipientName || 'there', tier, planMetadata))
 
     await mailerSend.email.send(emailParams)
     console.log(`Welcome email sent successfully to ${recipientEmail}`)
@@ -81,7 +82,8 @@ export async function sendSubscriptionConfirmation(
   recipientEmail: string,
   recipientName: string,
   tier: string,
-  billingCycle: 'monthly' | 'annual'
+  billingCycle: 'monthly' | 'annual',
+  planMetadata?: Record<string, unknown>
 ): Promise<boolean> {
   try {
     console.log(`Sending subscription confirmation to ${recipientEmail}`)
@@ -94,9 +96,9 @@ export async function sendSubscriptionConfirmation(
     const emailParams = new EmailParams()
       .setFrom(defaultSender)
       .setTo([new Recipient(recipientEmail, recipientName)])
-      .setSubject(`Welcome to ${getTierDisplayName(tier)}! 🎉`)
-      .setHtml(getSubscriptionConfirmationHTML(recipientName, tier, billingCycle))
-      .setText(getSubscriptionConfirmationText(recipientName, tier, billingCycle))
+      .setSubject(`${getTierDisplayName(tier)} plan confirmed`)
+      .setHtml(getSubscriptionConfirmationHTML(recipientName, tier, billingCycle, planMetadata))
+      .setText(getSubscriptionConfirmationText(recipientName, tier, billingCycle, planMetadata))
 
     await mailerSend.email.send(emailParams)
     console.log(`Subscription confirmation sent successfully to ${recipientEmail}`)
@@ -252,9 +254,139 @@ function getTierDisplayName(tier: string): string {
   return tierNames[tier] || tier
 }
 
-function getWelcomeEmailHTML(name: string, tier: string): string {
+type PlanLimits = {
+  maxUsers: number | null
+  apiConnections: number | 'unlimited'
+  dataRetentionDays: number
+}
+
+const DEFAULT_PLAN_LIMITS: Record<string, PlanLimits> = {
+  free_individual: { maxUsers: 1, apiConnections: 0, dataRetentionDays: 90 },
+  paid_individual: { maxUsers: 1, apiConnections: 0, dataRetentionDays: 90 },
+  team_apprentice: { maxUsers: 1, apiConnections: 0, dataRetentionDays: 90 },
+  team_sensei: { maxUsers: 10, apiConnections: 1, dataRetentionDays: 180 },
+  team_master: { maxUsers: 30, apiConnections: 3, dataRetentionDays: 365 },
+  enterprise: { maxUsers: null, apiConnections: 'unlimited', dataRetentionDays: -1 }
+}
+
+function normalizeTierKey(tier: string): string {
+  if (tier === 'novice') return 'free_individual'
+  return tier
+}
+
+function parsePlanLimitNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function parseApiConnections(value: unknown): number | 'unlimited' | undefined {
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'unlimited') return 'unlimited'
+  return parsePlanLimitNumber(value)
+}
+
+function parseMaxUsers(value: unknown): number | null | undefined {
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'unlimited') return null
+  return parsePlanLimitNumber(value)
+}
+
+function resolvePlanLimits(tier: string, planMetadata?: Record<string, unknown>): PlanLimits {
+  const tierKey = normalizeTierKey(tier)
+  const fallback = DEFAULT_PLAN_LIMITS[tierKey] || DEFAULT_PLAN_LIMITS.free_individual
+  const metadata = planMetadata || {}
+
+  const dataRetentionDays =
+    parsePlanLimitNumber(metadata.dataRetentionDays ?? metadata.retentionDays) ?? fallback.dataRetentionDays
+  const apiConnections =
+    parseApiConnections(metadata.apiIntegrations ?? metadata.apiConnections) ?? fallback.apiConnections
+  const maxUsers =
+    parseMaxUsers(metadata.maxUsers ?? metadata.userLimit ?? metadata.seatLimit) ?? fallback.maxUsers
+
+  return { dataRetentionDays, apiConnections, maxUsers }
+}
+
+function formatMaxUsers(maxUsers: number | null): string {
+  if (maxUsers === null) return 'Unlimited users'
+  if (maxUsers <= 1) return '1 user'
+  return `Up to ${maxUsers} users`
+}
+
+function formatApiConnections(apiConnections: number | 'unlimited'): string {
+  if (apiConnections === 'unlimited') return 'Unlimited API connections'
+  if (apiConnections <= 0) return 'No API connections included'
+  if (apiConnections === 1) return '1 API connection'
+  return `${apiConnections} API connections`
+}
+
+function formatDataRetention(days: number): string {
+  if (days < 0) return 'Unlimited data retention'
+  return `${days}-day data retention`
+}
+
+function getTierBenefitsList(tier: string, planMetadata?: Record<string, unknown>): string[] {
+  const tierKey = normalizeTierKey(tier)
+  const limits = resolvePlanLimits(tierKey, planMetadata)
+
+  const coreLimits = [
+    formatMaxUsers(limits.maxUsers),
+    formatApiConnections(limits.apiConnections),
+    formatDataRetention(limits.dataRetentionDays)
+  ]
+
+  const byTier: Record<string, string[]> = {
+    team_apprentice: [
+      ...coreLimits,
+      'Advanced personal analytics',
+      'Email support'
+    ],
+    paid_individual: [
+      ...coreLimits,
+      'Advanced personal analytics',
+      'Email support'
+    ],
+    team_sensei: [
+      ...coreLimits,
+      'Team analytics and breakdowns',
+      'Role-based access control',
+      'Export reports (CSV)'
+    ],
+    team_master: [
+      ...coreLimits,
+      'Advanced team insights',
+      'Priority email support',
+      'Export reports (CSV/PDF/Excel)'
+    ],
+    enterprise: [
+      ...coreLimits,
+      'Everything in Master',
+      'Custom integrations',
+      'SSO and SAML',
+      'Dedicated account support'
+    ],
+    free_individual: [
+      ...coreLimits,
+      'Manual CSV upload',
+      'Basic personal analytics'
+    ]
+  }
+
+  return byTier[tierKey] || byTier.free_individual
+}
+
+function getWelcomeEmailHTML(
+  name: string,
+  tier: string,
+  planMetadata?: Record<string, unknown>
+): string {
   const tierName = getTierDisplayName(tier)
   const isFree = tier === 'free_individual' || tier === 'novice'
+  const safeName = escapeHtml(name)
+  const benefits = getTierBenefitsList(tier, planMetadata)
+  const benefitsHtml = benefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join('')
+  const currentYear = new Date().getFullYear()
 
   return `
 <!DOCTYPE html>
@@ -262,45 +394,50 @@ function getWelcomeEmailHTML(name: string, tier: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="x-apple-disable-message-reformatting">
   <title>Welcome to AICoder.Guru</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F5E6D3;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F5E6D3; padding: 40px 20px;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F2E8CF;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+    Your ${tierName} plan is active. Review your limits for users, API connections, and data retention.
+  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F2E8CF; padding: 28px 14px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 14px; overflow: hidden; border: 1px solid #E8E0CC;">
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #114C5A 0%, #0A2E36 100%); padding: 40px 40px 30px 40px; text-align: center;">
-              <img src="https://app.aicoder.guru/logos/fueld-logo-symbol-white.svg" alt="AICoder.Guru" style="width: 80px; height: 80px; margin-bottom: 20px;">
-              <h1 style="color: #F5E6D3; margin: 0; font-size: 32px; font-weight: 700;">Welcome to AICoder.Guru! 🥋</h1>
-              ${!isFree ? `<p style="color: #97D700; margin: 10px 0 0 0; font-size: 18px; font-weight: 600;">${tierName} Tier</p>` : ''}
+            <td style="background-color: #124C5A; padding: 30px 32px 24px 32px; text-align: center;">
+              <img src="https://app.aicoder.guru/logos/jade-guru.svg" alt="AICoder.Guru" width="42" height="42" style="display:block; margin: 0 auto 10px auto;">
+              <p style="margin: 0 0 8px 0; color: #F2E8CF; font-size: 14px; font-weight: 600; letter-spacing: 0.3px;">AICoder.Guru</p>
+              <h1 style="color: #FFFFFF; margin: 0; font-size: 30px; font-weight: 700; line-height: 1.2;">Welcome to AICoder.Guru</h1>
+              ${!isFree ? `<p style="color: #97D700; margin: 10px 0 0 0; font-size: 17px; font-weight: 600;">${tierName} plan</p>` : ''}
             </td>
           </tr>
 
           <!-- Body -->
           <tr>
-            <td style="padding: 40px;">
+            <td style="padding: 30px 32px;">
               <p style="color: #0A2E36; font-size: 18px; line-height: 1.6; margin: 0 0 20px 0;">
-                Hi ${name},
+                Hi ${safeName},
               </p>
               
               <p style="color: #114C5A; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
                 ${isFree 
                   ? 'Thank you for joining AICoder.Guru! We\'re excited to help you track and optimize your AI coding assistant usage.'
-                  : `Thank you for subscribing to our ${tierName} tier! We're thrilled to have you on board.`
+                  : `Thanks for subscribing to the ${tierName} plan. Your account is ready and your plan limits are live.`
                 }
               </p>
 
               ${!isFree ? `
-              <div style="background-color: #F5E6D3; border-left: 4px solid #97D700; padding: 20px; margin: 30px 0;">
-                <h3 style="color: #0A2E36; margin: 0 0 10px 0; font-size: 18px;">Your ${tierName} Benefits:</h3>
+              <div style="background-color: #F2E8CF; border-left: 4px solid #97D700; padding: 18px; margin: 24px 0;">
+                <h3 style="color: #0A2E36; margin: 0 0 10px 0; font-size: 17px;">Your ${tierName} plan includes:</h3>
                 <ul style="color: #114C5A; margin: 10px 0; padding-left: 20px; font-size: 15px; line-height: 1.8;">
-                  ${getTierBenefits(tier)}
+                  ${benefitsHtml}
                 </ul>
               </div>
               ` : `
-              <div style="background-color: #F5E6D3; border-left: 4px solid #97D700; padding: 20px; margin: 30px 0;">
+              <div style="background-color: #F2E8CF; border-left: 4px solid #97D700; padding: 18px; margin: 24px 0;">
                 <h3 style="color: #0A2E36; margin: 0 0 10px 0; font-size: 18px;">Get Started:</h3>
                 <ul style="color: #114C5A; margin: 10px 0; padding-left: 20px; font-size: 15px; line-height: 1.8;">
                   <li>Upload your Cursor usage CSV files</li>
@@ -311,18 +448,18 @@ function getWelcomeEmailHTML(name: string, tier: string): string {
               `}
 
               <!-- CTA Button -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin: 26px 0;">
                 <tr>
                   <td align="center">
-                    <a href="https://app.aicoder.guru" style="display: inline-block; background-color: #97D700; color: #0A2E36; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <a href="https://app.aicoder.guru" style="display: inline-block; background-color: #F75C03; color: #FFFFFF; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 700;">
                       Go to Dashboard
                     </a>
                   </td>
                 </tr>
               </table>
 
-              <p style="color: #114C5A; font-size: 16px; line-height: 1.6; margin: 30px 0 20px 0;">
-                If you have any questions, feel free to reach out to our support team at <a href="mailto:[email protected]" style="color: #97D700; text-decoration: none;">[email protected]</a>
+              <p style="color: #114C5A; font-size: 15px; line-height: 1.6; margin: 24px 0 18px 0;">
+                Need help? Reply to this email or contact us at <a href="mailto:support@aicoder.guru" style="color: #F75C03; text-decoration: none;">support@aicoder.guru</a>.
               </p>
 
               <p style="color: #0A2E36; font-size: 16px; line-height: 1.6; margin: 0;">
@@ -334,12 +471,12 @@ function getWelcomeEmailHTML(name: string, tier: string): string {
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #F5E6D3; padding: 30px; text-align: center;">
+            <td style="background-color: #F2E8CF; padding: 22px; text-align: center;">
               <p style="color: #666666; font-size: 13px; margin: 0 0 10px 0;">
-                Measure, Motivate, Master AI
+                Measure. Motivate. Master AI.
               </p>
               <p style="color: #999999; font-size: 12px; margin: 0;">
-                © 2025 AICoder.Guru. All rights reserved.
+                © ${currentYear} AICoder.Guru. All rights reserved.
               </p>
             </td>
           </tr>
@@ -352,22 +489,28 @@ function getWelcomeEmailHTML(name: string, tier: string): string {
   `.trim()
 }
 
-function getWelcomeEmailText(name: string, tier: string): string {
+function getWelcomeEmailText(
+  name: string,
+  tier: string,
+  planMetadata?: Record<string, unknown>
+): string {
   const tierName = getTierDisplayName(tier)
   const isFree = tier === 'free_individual' || tier === 'novice'
+  const benefits = getTierBenefitsList(tier, planMetadata)
+  const supportEmail = 'support@aicoder.guru'
 
   return `
-Welcome to AICoder.Guru! 🥋
+Welcome to AICoder.Guru
 
 Hi ${name},
 
 ${isFree 
   ? 'Thank you for joining AICoder.Guru! We\'re excited to help you track and optimize your AI coding assistant usage.'
-  : `Thank you for subscribing to our ${tierName} tier! We're thrilled to have you on board.`
+  : `Thanks for subscribing to the ${tierName} plan. Your account is ready and your plan limits are live.`
 }
 
-${!isFree ? `Your ${tierName} Benefits:
-${getTierBenefitsText(tier)}
+${!isFree ? `Your ${tierName} plan includes:
+${benefits.map(benefit => `- ${benefit}`).join('\n')}
 
 ` : `Get Started:
 - Upload your Cursor usage CSV files
@@ -376,98 +519,24 @@ ${getTierBenefitsText(tier)}
 
 `}Go to your dashboard: https://app.aicoder.guru
 
-If you have any questions, feel free to reach out to our support team at [email protected]
+Need help? Reply to this email or contact ${supportEmail}
 
 Best regards,
 The AICoder.Guru Team
 
 ---
-Measure, Motivate, Master AI
-© 2025 AICoder.Guru. All rights reserved.
+Measure. Motivate. Master AI.
+© ${new Date().getFullYear()} AICoder.Guru. All rights reserved.
   `.trim()
 }
 
-function getTierBenefits(tier: string): string {
-  const benefits: Record<string, string[]> = {
-    'team_apprentice': [
-      'Up to 5 team members',
-      '1-year data retention',
-      'Team analytics dashboard',
-      'Email support (72 hrs)'
-    ],
-    'team_sensei': [
-      'Up to 10 team members',
-      'API connection sync (1 service)',
-      'Unlimited data retention',
-      'Team analytics & breakdowns',
-      'Role-based access control',
-      'Export reports (PDF/CSV/Excel)'
-    ],
-    'team_master': [
-      'Up to 30 team members',
-      'API connection sync (3 services)',
-      'Unlimited data retention',
-      'Advanced team analytics',
-      'Custom dashboards',
-      'Priority support',
-      'All export formats'
-    ],
-    'enterprise': [
-      'Unlimited team members',
-      'All API integrations',
-      'Unlimited data retention',
-      'Dedicated support',
-      'Custom integrations',
-      'SSO & SAML',
-      'SLA guarantee'
-    ]
-  }
-
-  const tierBenefits = benefits[tier] || []
-  return tierBenefits.map(benefit => `<li>${benefit}</li>`).join('')
-}
-
-function getTierBenefitsText(tier: string): string {
-  const benefits: Record<string, string[]> = {
-    'team_apprentice': [
-      'Up to 5 team members',
-      '1-year data retention',
-      'Team analytics dashboard',
-      'Email support (72 hrs)'
-    ],
-    'team_sensei': [
-      'Up to 10 team members',
-      'API connection sync (1 service)',
-      'Unlimited data retention',
-      'Team analytics & breakdowns',
-      'Role-based access control',
-      'Export reports (PDF/CSV/Excel)'
-    ],
-    'team_master': [
-      'Up to 30 team members',
-      'API connection sync (3 services)',
-      'Unlimited data retention',
-      'Advanced team analytics',
-      'Custom dashboards',
-      'Priority support',
-      'All export formats'
-    ],
-    'enterprise': [
-      'Unlimited team members',
-      'All API integrations',
-      'Unlimited data retention',
-      'Dedicated support',
-      'Custom integrations',
-      'SSO & SAML',
-      'SLA guarantee'
-    ]
-  }
-
-  const tierBenefits = benefits[tier] || []
-  return tierBenefits.map(benefit => `- ${benefit}`).join('\n')
-}
-
-function getSubscriptionConfirmationHTML(name: string, tier: string, billingCycle: string): string {
+function getSubscriptionConfirmationHTML(
+  name: string,
+  tier: string,
+  billingCycle: string,
+  planMetadata?: Record<string, unknown>
+): string {
+  const benefits = getTierBenefitsList(tier, planMetadata)
   return `
 <!DOCTYPE html>
 <html>
@@ -485,6 +554,12 @@ function getSubscriptionConfirmationHTML(name: string, tier: string, billingCycl
               <p style="color: #114C5A; font-size: 16px; line-height: 1.6;">
                 Your subscription to the <strong>${getTierDisplayName(tier)}</strong> tier (${billingCycle}) has been confirmed.
               </p>
+              <p style="color: #114C5A; font-size: 16px; line-height: 1.6; margin: 16px 0 8px 0;">
+                Your current plan includes:
+              </p>
+              <ul style="color: #114C5A; margin: 0 0 18px 0; padding-left: 20px; font-size: 15px; line-height: 1.7;">
+                ${benefits.map(benefit => `<li>${escapeHtml(benefit)}</li>`).join('')}
+              </ul>
               <p style="color: #114C5A; font-size: 16px; line-height: 1.6;">
                 You now have access to all ${getTierDisplayName(tier)} features. Visit your dashboard to get started!
               </p>
@@ -508,13 +583,22 @@ function getSubscriptionConfirmationHTML(name: string, tier: string, billingCycl
   `.trim()
 }
 
-function getSubscriptionConfirmationText(name: string, tier: string, billingCycle: string): string {
+function getSubscriptionConfirmationText(
+  name: string,
+  tier: string,
+  billingCycle: string,
+  planMetadata?: Record<string, unknown>
+): string {
+  const benefits = getTierBenefitsList(tier, planMetadata)
   return `
 Subscription Confirmed! 🎉
 
 Hi ${name},
 
 Your subscription to the ${getTierDisplayName(tier)} tier (${billingCycle}) has been confirmed.
+
+Your current plan includes:
+${benefits.map(benefit => `- ${benefit}`).join('\n')}
 
 You now have access to all ${getTierDisplayName(tier)} features. Visit your dashboard to get started!
 

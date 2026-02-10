@@ -345,10 +345,16 @@ export async function handleSubscriptionCreated(
   if (userEmail) {
     if (source === 'website') {
       // New user from website - send welcome email
-      await sendWelcomeEmail(userEmail, userName, internalTier)
+      await sendWelcomeEmail(userEmail, userName, internalTier, priceMetadata)
     } else {
       // Existing user upgrading - send subscription confirmation
-      await sendSubscriptionConfirmation(userEmail, userName, internalTier, billingCycle)
+      await sendSubscriptionConfirmation(
+        userEmail,
+        userName,
+        internalTier,
+        billingCycle,
+        priceMetadata
+      )
     }
 
     // Send admin notification

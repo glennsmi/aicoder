@@ -21,6 +21,7 @@ export default function Sidebar() {
   // Determine user's role and tier
   const userRole = user?.currentRole || 'individual'
   const userTier = user?.tier || 'free_individual'
+  const hasSenseiPlusTier = userTier === 'team' || userTier === 'enterprise'
 
   const handleLogout = async () => {
     try {
@@ -69,6 +70,18 @@ export default function Sidebar() {
           </svg>
         ),
       })
+
+      if (hasSenseiPlusTier && (userRole === 'admin' || userRole === 'team_manager')) {
+        items.push({
+          label: 'Reports',
+          path: '/reports',
+          icon: (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6m3 6V7m3 10v-3m4 5H5a2 2 0 01-2-2V7a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2z" />
+            </svg>
+          ),
+        })
+      }
     }
 
     // Admin-specific items
