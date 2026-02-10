@@ -37,6 +37,18 @@ export const TIER_TO_CODE_NAME: Record<string, string> = {
   'enterprise': 'grandmaster'
 }
 
+const ALLOWED_INTERNAL_TIERS = new Set([
+  'free_individual',
+  'team_apprentice',
+  'team_sensei',
+  'team_master',
+  'enterprise'
+] as const)
+
+function isAllowedInternalTier(value: unknown): value is string {
+  return typeof value === 'string' && ALLOWED_INTERNAL_TIERS.has(value as any)
+}
+
 /**
  * Determine internal tier from Stripe price ID
  */
@@ -61,6 +73,46 @@ export function determineTierFromPrice(priceId: string): string {
   }
 
   return priceToTier[priceId] || 'free_individual'
+}
+
+/**
+ * Determine internal tier from a Stripe Price object (preferred).
+ * Falls back to env mapping if metadata is missing.
+ */
+export function determineTierFromStripePrice(price: any): string {
+  const internalTierFromMeta = price?.metadata?.internalTier
+  if (isAllowedInternalTier(internalTierFromMeta)) return internalTierFromMeta
+
+  const codeNameFromMeta = price?.metadata?.codeName
+  if (typeof codeNameFromMeta === 'string' && codeNameFromMeta.trim()) {
+    return determineTierFromCodeName(codeNameFromMeta)
+  }
+
+  const priceId = price?.id
+  if (typeof priceId === 'string' && priceId.trim()) {
+    return determineTierFromPrice(priceId)
+  }
+
+  return 'free_individual'
+}
+
+export function getCodeNameFromStripePrice(price: any): string {
+  const codeNameFromMeta = price?.metadata?.codeName
+  if (typeof codeNameFromMeta === 'string' && codeNameFromMeta.trim()) {
+    return codeNameFromMeta.trim().toLowerCase()
+  }
+
+  const internalTierFromMeta = price?.metadata?.internalTier
+  if (isAllowedInternalTier(internalTierFromMeta)) {
+    return getCodeNameFromTier(internalTierFromMeta)
+  }
+
+  const priceId = price?.id
+  if (typeof priceId === 'string' && priceId.trim()) {
+    return getCodeNameFromPrice(priceId)
+  }
+
+  return 'novice'
 }
 
 /**

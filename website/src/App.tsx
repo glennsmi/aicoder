@@ -12,6 +12,7 @@ import PrivacyPage from './pages/PrivacyPage'
 import TermsPage from './pages/TermsPage'
 import CookiesPage from './pages/CookiesPage'
 import AcceptableUsePage from './pages/AcceptableUsePage'
+import CheckoutSuccessPage from './pages/260209_2129_CheckoutSuccessPage'
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/features" element={<FeaturesPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
+                <Route path="/success" element={<CheckoutSuccessPage />} />
                 <Route path="/faq" element={<FAQPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />

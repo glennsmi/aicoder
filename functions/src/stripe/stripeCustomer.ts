@@ -9,6 +9,37 @@ import { getStripeClient } from '../utils/stripe'
 
 const db = admin.firestore()
 
+function sanitizeBillingReturnUrl(input: unknown): string {
+  const fallbackBase = process.env.VITE_APP_URL || 'http://localhost:3003'
+  const fallback = `${fallbackBase.replace(/\/$/, '')}/billing`
+
+  if (typeof input !== 'string' || !input.trim()) return fallback
+
+  try {
+    const url = new URL(input)
+
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return fallback
+
+    const host = url.hostname.toLowerCase()
+    const allowedHost =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === 'aicoder.guru' ||
+      host.endsWith('.aicoder.guru')
+
+    if (!allowedHost) return fallback
+
+    // If caller passed only an origin, default to /billing.
+    if (!url.pathname || url.pathname === '/') {
+      url.pathname = '/billing'
+    }
+
+    return url.toString()
+  } catch {
+    return fallback
+  }
+}
+
 /**
  * Create a Stripe customer for a user
  * Called when a user signs up or when manually creating a customer for existing users
@@ -112,7 +143,9 @@ export const createBillingPortalSession = onCall(
       throw new HttpsError('unauthenticated', 'User must be authenticated')
     }
 
-    const returnUrl = data?.returnUrl || process.env.VITE_APP_URL || 'http://localhost:3003'
+    const returnUrl = sanitizeBillingReturnUrl(
+      data?.returnUrl || process.env.VITE_APP_URL || 'http://localhost:3003'
+    )
 
     try {
       console.log(`Creating billing portal session for user: ${auth.uid}`)
@@ -173,7 +206,7 @@ export const createBillingPortalSession = onCall(
       // Create billing portal session
       const session = await stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: `${returnUrl}/billing`
+        return_url: returnUrl
       })
 
       console.log(`Created billing portal session: ${session.id}`)

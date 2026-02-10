@@ -61,9 +61,9 @@
   }
   ```
 
-#### Annual (GBP) - 20% discount
+#### Annual (GBP) - 2 months free
 - **Price ID:** `price_apprentice_annual_gbp`
-- **Amount:** £28.70 (2870 pence) - saves £7.18/year
+- **Amount:** £29.90 (2990 pence) - pay for 10 months, get 12
 - **Currency:** GBP
 - **Billing Period:** Yearly
 - **Type:** Recurring
@@ -73,7 +73,7 @@
     "codeName": "apprentice",
     "billingCycle": "annual",
     "currency": "gbp",
-    "discount": "20"
+    "annualOffer": "2_months_free"
   }
   ```
 
@@ -113,9 +113,9 @@
   }
   ```
 
-#### Annual (GBP) - 20% discount
+#### Annual (GBP) - 2 months free
 - **Price ID:** `price_sensei_annual_gbp`
-- **Amount:** £278.40 (27840 pence) - saves £69.60/year
+- **Amount:** £290 (29000 pence) - pay for 10 months, get 12
 - **Currency:** GBP
 - **Billing Period:** Yearly
 - **Type:** Recurring
@@ -125,7 +125,7 @@
     "codeName": "sensei",
     "billingCycle": "annual",
     "currency": "gbp",
-    "discount": "20"
+    "annualOffer": "2_months_free"
   }
   ```
 
@@ -165,9 +165,9 @@
   }
   ```
 
-#### Annual (GBP) - 20% discount
+#### Annual (GBP) - 2 months free
 - **Price ID:** `price_master_annual_gbp`
-- **Amount:** £470.40 (47040 pence) - saves £117.60/year
+- **Amount:** £490 (49000 pence) - pay for 10 months, get 12
 - **Currency:** GBP
 - **Billing Period:** Yearly
 - **Type:** Recurring
@@ -177,7 +177,7 @@
     "codeName": "master",
     "billingCycle": "annual",
     "currency": "gbp",
-    "discount": "20"
+    "annualOffer": "2_months_free"
   }
   ```
 
@@ -517,7 +517,7 @@ export default function CustomCheckout() {
           onClick={() => createCheckout('apprentice', 'annual')}
           className="btn-secondary mt-2"
         >
-          Subscribe Annual (Save 20%)
+          Subscribe Annual (2 months free)
         </button>
       </div>
 
@@ -536,7 +536,7 @@ export default function CustomCheckout() {
           onClick={() => createCheckout('sensei', 'annual')}
           className="btn-secondary mt-2"
         >
-          Subscribe Annual (Save 20%)
+          Subscribe Annual (2 months free)
         </button>
       </div>
 
@@ -554,7 +554,7 @@ export default function CustomCheckout() {
           onClick={() => createCheckout('master', 'annual')}
           className="btn-secondary mt-2"
         >
-          Subscribe Annual (Save 20%)
+          Subscribe Annual (2 months free)
         </button>
       </div>
     </div>

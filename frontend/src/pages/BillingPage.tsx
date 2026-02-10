@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useDeveloper } from '../contexts/DeveloperContext'
@@ -7,6 +7,9 @@ import TierOverrideSelector from '../components/TierOverrideSelector'
 import CreateStripeCustomerButton from '../components/CreateStripeCustomerButton'
 import CustomerPortalButton from '../components/CustomerPortalButton'
 import { PRICING_TIERS } from '@shared'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from '../config/firebaseApp'
+import { collection, getDocs, query as fsQuery, where } from 'firebase/firestore'
 
 // Define tier mapping based on Stripe integration plan
 const TIER_MAPPING = {
@@ -37,13 +40,55 @@ const TIER_DESCRIPTIONS: Record<string, string> = {
   'enterprise': 'For large organizations with advanced needs'
 }
 
+const INTERNAL_TIER_LIMITS: Record<string, { dataRetentionDays: number; apiIntegrations: number | 'unlimited'; maxUsers: number | null }> = {
+  free_individual: { dataRetentionDays: 90, apiIntegrations: 0, maxUsers: 1 },
+  paid_individual: { dataRetentionDays: 90, apiIntegrations: 0, maxUsers: 1 },
+  team_apprentice: { dataRetentionDays: 90, apiIntegrations: 0, maxUsers: 1 },
+  team_sensei: { dataRetentionDays: 180, apiIntegrations: 1, maxUsers: 10 },
+  team_master: { dataRetentionDays: 365, apiIntegrations: 3, maxUsers: 30 },
+  enterprise: { dataRetentionDays: -1, apiIntegrations: 'unlimited', maxUsers: null },
+}
+
+type ActiveSubscriptionSnapshot = {
+  internalTier?: string
+  planMetadata?: Record<string, unknown>
+}
+
+function toMillisSafe(value: any): number {
+  if (!value) return 0
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+function parseOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number(value)
+    if (Number.isFinite(n)) return n
+  }
+  return undefined
+}
+
 
 export default function BillingPage() {
-  const navigate = useNavigate()
+  const location = useLocation()
   const { organization } = useOrganization()
   const { user } = useAuth()
   const { testMode } = useDeveloper()
   const [showPricingTable, setShowPricingTable] = useState(false)
+  const [stripeSyncStatus, setStripeSyncStatus] = useState<
+    | { state: 'idle' }
+    | { state: 'syncing' }
+    | { state: 'done'; message: string }
+    | { state: 'error'; message: string }
+  >({ state: 'idle' })
+  const [activeSubscription, setActiveSubscription] = useState<ActiveSubscriptionSnapshot | null>(null)
+
+  const query = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const checkoutSessionId = query.get('session_id')
+  const checkoutSuccess = query.get('success') === 'true' || query.get('checkout') === 'success'
+  const attemptedSyncRef = useRef<string | null>(null)
 
   // Determine current tier and features
   const currentTier = user?.tier || 'free_individual'
@@ -62,6 +107,124 @@ export default function BillingPage() {
       organizationTier: organization?.tier
     })
   }, [user?.tier, currentTier, orgTier, pricingTier, isPaidTier, organization?.tier])
+
+  // After returning from Stripe Checkout, manually sync the subscription as a fallback.
+  // This helps when Stripe webhooks are delayed or misconfigured.
+  useEffect(() => {
+    if (!user) return
+    if (!checkoutSuccess || !checkoutSessionId) return
+
+    if (attemptedSyncRef.current === checkoutSessionId) return
+    attemptedSyncRef.current = checkoutSessionId
+
+    const run = async () => {
+      try {
+        setStripeSyncStatus({ state: 'syncing' })
+
+        const syncFn = httpsCallable(functions, 'syncStripeCheckoutSession')
+        const result = await syncFn({ sessionId: checkoutSessionId })
+        const data = result.data as any
+
+        if (data?.success) {
+          setStripeSyncStatus({
+            state: 'done',
+            message: `Subscription synced (${data.userTier || data.internalTier || 'updated'}).`
+          })
+        } else {
+          setStripeSyncStatus({
+            state: 'error',
+            message: 'Could not sync subscription. Please refresh and try again.'
+          })
+        }
+      } catch (e: any) {
+        setStripeSyncStatus({
+          state: 'error',
+          message: e?.message || 'Failed to sync subscription.'
+        })
+      }
+    }
+
+    run()
+  }, [user, checkoutSuccess, checkoutSessionId])
+
+  // Fetch the active subscription so the sidebar reflects Stripe sub-plan limits
+  // (Sensei vs Master), not only the coarse app-level "team" tier defaults.
+  useEffect(() => {
+    if (!user) {
+      setActiveSubscription(null)
+      return
+    }
+
+    const run = async () => {
+      try {
+        const subscriptionsRef = collection(db, 'subscriptions')
+        const subQuery = organization?.id
+          ? fsQuery(subscriptionsRef, where('organizationId', '==', organization.id))
+          : fsQuery(subscriptionsRef, where('userId', '==', user.id))
+
+        const snapshot = await getDocs(subQuery)
+
+        const activeStatuses = new Set(['active', 'trialing', 'past_due'])
+        const docs = snapshot.docs
+          .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+          .filter((sub: any) => activeStatuses.has(String(sub.status || '')))
+          .sort((a: any, b: any) => {
+            const aTs = toMillisSafe(a.updatedAt) || toMillisSafe(a.currentPeriodEnd)
+            const bTs = toMillisSafe(b.updatedAt) || toMillisSafe(b.currentPeriodEnd)
+            return bTs - aTs
+          })
+
+        if (docs.length > 0) {
+          const current = docs[0] as any
+          setActiveSubscription({
+            internalTier: current.internalTier || current.tier,
+            planMetadata: current.planMetadata || current.priceMetadata || undefined
+          })
+        } else {
+          setActiveSubscription(null)
+        }
+      } catch (error) {
+        console.warn('Failed to fetch active subscription for billing sidebar:', error)
+        setActiveSubscription(null)
+      }
+    }
+
+    run()
+  }, [user?.id, organization?.id, stripeSyncStatus.state])
+
+  const usageMetrics = useMemo(() => {
+    // Base fallback from existing static pricing tiers.
+    const fallbackApiEnabled = pricingTier.features.find(f => f.id === 'api_integration')?.included
+    const fallback = {
+      dataRetentionDays: pricingTier.dataRetentionDays,
+      apiIntegrations: fallbackApiEnabled ? 1 : 0,
+      maxUsers: pricingTier.maxUsers,
+    }
+
+    if (!activeSubscription) return fallback
+
+    const fromInternalTier = activeSubscription.internalTier
+      ? INTERNAL_TIER_LIMITS[activeSubscription.internalTier]
+      : undefined
+
+    const meta = activeSubscription.planMetadata || {}
+    const metaDataRetention = parseOptionalNumber(meta.dataRetentionDays)
+    const metaMaxUsersRaw = meta.maxUsers
+    const metaMaxUsers = typeof metaMaxUsersRaw === 'string' && metaMaxUsersRaw.trim().toLowerCase() === 'unlimited'
+      ? null
+      : parseOptionalNumber(metaMaxUsersRaw)
+    const metaApiRaw = meta.apiIntegrations
+    const metaApiIntegrations: number | 'unlimited' | undefined =
+      typeof metaApiRaw === 'string' && metaApiRaw.trim().toLowerCase() === 'unlimited'
+        ? 'unlimited'
+        : parseOptionalNumber(metaApiRaw)
+
+    return {
+      dataRetentionDays: metaDataRetention ?? fromInternalTier?.dataRetentionDays ?? fallback.dataRetentionDays,
+      apiIntegrations: metaApiIntegrations ?? fromInternalTier?.apiIntegrations ?? fallback.apiIntegrations,
+      maxUsers: metaMaxUsers ?? fromInternalTier?.maxUsers ?? fallback.maxUsers,
+    }
+  }, [activeSubscription, pricingTier])
 
   // Tier updating animation
   const [tierUpdating, setTierUpdating] = useState(false)
@@ -98,6 +261,35 @@ export default function BillingPage() {
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+      {stripeSyncStatus.state !== 'idle' && (
+        <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+          stripeSyncStatus.state === 'syncing'
+            ? 'border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-primary-200'
+            : stripeSyncStatus.state === 'done'
+              ? 'border-accent-200 bg-accent-50 text-accent-700 dark:border-accent-900/40 dark:bg-accent-900/20 dark:text-accent-200'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200'
+        }`}>
+          {stripeSyncStatus.state === 'syncing' ? (
+            <div className="flex items-center gap-2">
+              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Syncing your subscription from Stripe…
+            </div>
+          ) : (
+            <span>
+              {stripeSyncStatus.message}{' '}
+              <button
+                onClick={() => window.location.reload()}
+                className="underline font-medium"
+              >
+                Refresh
+              </button>
+            </span>
+          )}
+        </div>
+      )}
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gunmetal-900 dark:text-white">
@@ -199,48 +391,6 @@ export default function BillingPage() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="mt-6 pt-5 border-t border-neutral-200 dark:border-secondary-700 flex flex-col sm:flex-row gap-3">
-                {!isPaidTier ? (
-                  <button
-                    onClick={handleUpgradeClick}
-                    className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 text-white font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                    Upgrade Plan
-                  </button>
-                ) : (
-                  <>
-                    <CustomerPortalButton
-                      className="flex-1"
-                      variant="primary"
-                    />
-                    <button
-                      onClick={handleUpgradeClick}
-                      className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-200 dark:border-secondary-600 text-gunmetal-900 dark:text-white font-semibold rounded-lg hover:bg-neutral-50 dark:hover:bg-secondary-800 transition-colors"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                      </svg>
-                      Change Plan
-                    </button>
-                  </>
-                )}
-                {organization && (
-                  <button
-                    onClick={() => navigate('/organization-settings')}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 text-gunmetal-600 dark:text-gray-400 font-medium rounded-lg hover:bg-neutral-50 dark:hover:bg-secondary-800 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Org Settings
-                  </button>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -258,13 +408,13 @@ export default function BillingPage() {
                 <div className="flex items-center justify-between text-sm mb-1.5">
                   <span className="text-gunmetal-600 dark:text-gray-400">Data Retention</span>
                   <span className="font-semibold text-gunmetal-900 dark:text-white">
-                    {pricingTier.dataRetentionDays === -1 ? 'Unlimited' : `${pricingTier.dataRetentionDays} days`}
+                    {usageMetrics.dataRetentionDays === -1 ? 'Unlimited' : `${usageMetrics.dataRetentionDays} days`}
                   </span>
                 </div>
                 <div className="w-full bg-neutral-200 dark:bg-secondary-700 rounded-full h-2">
                   <div
                     className="bg-primary-500 h-2 rounded-full transition-all duration-500"
-                    style={{ width: pricingTier.dataRetentionDays === -1 ? '100%' : '30%' }}
+                    style={{ width: usageMetrics.dataRetentionDays === -1 ? '100%' : '30%' }}
                   />
                 </div>
               </div>
@@ -274,12 +424,16 @@ export default function BillingPage() {
                 <div className="flex items-center justify-between text-sm mb-1.5">
                   <span className="text-gunmetal-600 dark:text-gray-400">API Integrations</span>
                   <span className="font-semibold text-gunmetal-900 dark:text-white">
-                    {pricingTier.features.find(f => f.id === 'api_integration')?.included ? 'Enabled' : 'Disabled'}
+                    {usageMetrics.apiIntegrations === 'unlimited'
+                      ? 'Unlimited'
+                      : usageMetrics.apiIntegrations > 0
+                        ? usageMetrics.apiIntegrations
+                        : 'Disabled'}
                   </span>
                 </div>
                 <div className="w-full bg-neutral-200 dark:bg-secondary-700 rounded-full h-2">
                   <div
-                    className={`h-2 rounded-full transition-all duration-500 ${pricingTier.features.find(f => f.id === 'api_integration')?.included
+                    className={`h-2 rounded-full transition-all duration-500 ${usageMetrics.apiIntegrations === 'unlimited' || usageMetrics.apiIntegrations > 0
                       ? 'bg-accent-400'
                       : 'bg-neutral-200 dark:bg-secondary-700'
                       }`}
@@ -293,13 +447,13 @@ export default function BillingPage() {
                 <div className="flex items-center justify-between text-sm mb-1.5">
                   <span className="text-gunmetal-600 dark:text-gray-400">Team Members</span>
                   <span className="font-semibold text-gunmetal-900 dark:text-white">
-                    {pricingTier.maxUsers === null ? 'Unlimited' : pricingTier.maxUsers}
+                    {usageMetrics.maxUsers === null ? 'Unlimited' : usageMetrics.maxUsers}
                   </span>
                 </div>
                 <div className="w-full bg-neutral-200 dark:bg-secondary-700 rounded-full h-2">
                   <div
                     className="bg-secondary-400 h-2 rounded-full transition-all duration-500"
-                    style={{ width: pricingTier.maxUsers === null ? '100%' : '20%' }}
+                    style={{ width: usageMetrics.maxUsers === null ? '100%' : '20%' }}
                   />
                 </div>
               </div>
@@ -330,30 +484,6 @@ export default function BillingPage() {
             </div>
           </div>
 
-          {/* Quick Actions for paid users */}
-          {isPaidTier && (
-            <div className="bg-white dark:bg-secondary-900 rounded-xl p-6 shadow-sm border border-neutral-200 dark:border-secondary-700">
-              <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-4">
-                Quick Actions
-              </h2>
-              <div className="space-y-2">
-                <CustomerPortalButton
-                  className="w-full justify-center"
-                  variant="outline"
-                  size="sm"
-                />
-                <button
-                  onClick={handleUpgradeClick}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-sm border border-neutral-200 dark:border-secondary-600 text-gunmetal-700 dark:text-gray-300 font-medium rounded-lg hover:bg-neutral-50 dark:hover:bg-secondary-800 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                  </svg>
-                  Change Plan
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

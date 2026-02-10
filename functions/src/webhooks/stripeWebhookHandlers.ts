@@ -5,8 +5,8 @@
 
 import * as admin from 'firebase-admin'
 import { 
-  determineTierFromPrice, 
-  getCodeNameFromPrice, 
+  determineTierFromStripePrice,
+  getCodeNameFromStripePrice,
   getBillingCycleFromPrice 
 } from '../utils/stripe'
 import { 
@@ -71,6 +71,29 @@ function billingTargetForInternalTier(internalTier: string): EntityType {
   return 'user'
 }
 
+function dateFromStripeEpochSeconds(value: unknown): Date | undefined {
+  const seconds =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : NaN
+
+  if (!Number.isFinite(seconds)) return undefined
+
+  const date = new Date(seconds * 1000)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
+
+function normalizePriceMetadata(metadata: unknown): Record<string, string> | undefined {
+  if (!metadata || typeof metadata !== 'object') return undefined
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(metadata as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim()) out[key] = value.trim()
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 /**
  * Handle checkout.session.completed
  * User has completed payment on pricing table or checkout page
@@ -108,8 +131,8 @@ export async function handleCheckoutSessionCompleted(
     apiVersion: '2025-09-30.clover'
   })
   const subscription = await stripeClient.subscriptions.retrieve(subscriptionId)
-  const priceId = subscription.items.data[0]?.price.id || ''
-  const internalTier = determineTierFromPrice(priceId)
+  const price = subscription.items.data[0]?.price
+  const internalTier = determineTierFromStripePrice(price)
   const { orgTier, userTier } = mapInternalTierToAppTiers(internalTier)
   const desiredBillingTarget = billingTargetForInternalTier(internalTier)
 
@@ -249,19 +272,34 @@ export async function handleSubscriptionCreated(
   console.log('Processing subscription.created:', subscription.id)
 
   const customerId = subscription.customer as string
-  const priceId = subscription.items.data[0]?.price.id || ''
-  const internalTier = determineTierFromPrice(priceId)
+  const price = subscription.items.data[0]?.price
+  const priceId = price?.id || ''
+  const internalTier = determineTierFromStripePrice(price)
   const { orgTier, userTier } = mapInternalTierToAppTiers(internalTier)
-  const codeName = getCodeNameFromPrice(priceId)
+  const codeName = getCodeNameFromStripePrice(price)
   const billingCycle = getBillingCycleFromPrice(priceId)
   const quantity = subscription.items.data[0]?.quantity || 1
+  const priceMetadata = normalizePriceMetadata(price?.metadata)
 
   // Find entity by customer ID if not provided
   if (!entityId || !entityType) {
-    const result = await findEntityByCustomerId(customerId)
-    entityId = result.entityId
-    entityType = result.entityType
+    try {
+      const result = await findEntityByCustomerId(customerId)
+      entityId = result.entityId
+      entityType = result.entityType
+    } catch (error) {
+      // customer.subscription.created can arrive before checkout.session.completed links customer -> user/org.
+      console.warn(
+        `Skipping subscription.created for now; customer not linked yet: ${customerId}`
+      )
+      return
+    }
   }
+
+  const currentPeriodStart = dateFromStripeEpochSeconds(subscription.current_period_start)
+  const currentPeriodEnd = dateFromStripeEpochSeconds(subscription.current_period_end)
+  const trialStart = dateFromStripeEpochSeconds(subscription.trial_start)
+  const trialEnd = dateFromStripeEpochSeconds(subscription.trial_end)
 
   // Create subscription document
   const subscriptionData = {
@@ -283,15 +321,12 @@ export async function handleSubscriptionCreated(
     seats: quantity,
     billingCycle,
     stripePriceId: priceId,
-    currentPeriodStart: new Date((subscription.current_period_start as number) * 1000),
-    currentPeriodEnd: new Date((subscription.current_period_end as number) * 1000),
+    ...(priceMetadata && { planMetadata: priceMetadata }),
+    ...(currentPeriodStart && { currentPeriodStart }),
+    ...(currentPeriodEnd && { currentPeriodEnd }),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    ...(subscription.trial_start && {
-      trialStart: new Date(subscription.trial_start * 1000)
-    }),
-    ...(subscription.trial_end && {
-      trialEnd: new Date(subscription.trial_end * 1000)
-    }),
+    ...(trialStart && { trialStart }),
+    ...(trialEnd && { trialEnd }),
     source: source || 'unknown',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
@@ -344,11 +379,16 @@ export async function handleSubscriptionUpdated(
 ) {
   console.log('Processing subscription.updated:', subscription.id)
 
-  const priceId = subscription.items.data[0]?.price.id || ''
-  const internalTier = determineTierFromPrice(priceId)
+  const price = subscription.items.data[0]?.price
+  const priceId = price?.id || ''
+  const internalTier = determineTierFromStripePrice(price)
   const { orgTier, userTier } = mapInternalTierToAppTiers(internalTier)
-  const codeName = getCodeNameFromPrice(priceId)
+  const codeName = getCodeNameFromStripePrice(price)
   const quantity = subscription.items.data[0]?.quantity || 1
+  const priceMetadata = normalizePriceMetadata(price?.metadata)
+  const currentPeriodStart = dateFromStripeEpochSeconds(subscription.current_period_start)
+  const currentPeriodEnd = dateFromStripeEpochSeconds(subscription.current_period_end)
+  const canceledAt = dateFromStripeEpochSeconds(subscription.canceled_at)
 
   // Update subscription document
   const updateData: any = {
@@ -360,14 +400,15 @@ export async function handleSubscriptionUpdated(
     status: subscription.status,
     seats: quantity,
     stripePriceId: priceId,
-    currentPeriodStart: new Date((subscription.current_period_start as number) * 1000),
-    currentPeriodEnd: new Date((subscription.current_period_end as number) * 1000),
+    ...(priceMetadata && { planMetadata: priceMetadata }),
+    ...(currentPeriodStart && { currentPeriodStart }),
+    ...(currentPeriodEnd && { currentPeriodEnd }),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     updatedAt: FieldValue.serverTimestamp()
   }
 
-  if (subscription.canceled_at) {
-    updateData.canceledAt = new Date(subscription.canceled_at * 1000)
+  if (canceledAt) {
+    updateData.canceledAt = canceledAt
   }
 
   await db.collection('subscriptions').doc(subscription.id).update(updateData)
@@ -394,13 +435,14 @@ export async function handleSubscriptionUpdated(
     if (subscription.cancel_at_period_end && !subData.cancelAtPeriodEnd) {
       const userEmail = await getUserEmail(entityId, entityType)
       const userName = await getUserName(entityId, entityType)
+      const periodEndDate = dateFromStripeEpochSeconds(subscription.current_period_end)
       
-      if (userEmail) {
+      if (userEmail && periodEndDate) {
         await sendSubscriptionCanceledEmail(
           userEmail,
           userName,
           resolvedInternalTier,
-          new Date((subscription.current_period_end as number) * 1000)
+          periodEndDate
         )
       }
     }
@@ -571,6 +613,11 @@ export async function handleSubscriptionTrialWillEnd(
  * Store invoice in Firestore
  */
 async function storeInvoice(invoice: any, subscriptionData: any) {
+  const periodStart = dateFromStripeEpochSeconds(invoice.period_start)
+  const periodEnd = dateFromStripeEpochSeconds(invoice.period_end)
+  const dueDate = dateFromStripeEpochSeconds(invoice.due_date)
+  const paidAt = dateFromStripeEpochSeconds(invoice.status_transitions?.paid_at)
+
   const invoiceData = {
     stripeInvoiceId: invoice.id,
     stripeCustomerId: invoice.customer as string,
@@ -580,14 +627,10 @@ async function storeInvoice(invoice: any, subscriptionData: any) {
     amount: (invoice.amount_paid || 0) / 100, // Convert from cents
     currency: invoice.currency,
     status: invoice.status || 'draft',
-    periodStart: new Date(invoice.period_start * 1000),
-    periodEnd: new Date(invoice.period_end * 1000),
-    ...(invoice.due_date && {
-      dueDate: new Date(invoice.due_date * 1000)
-    }),
-    ...(invoice.status_transitions?.paid_at && {
-      paidAt: new Date(invoice.status_transitions.paid_at * 1000)
-    }),
+    ...(periodStart && { periodStart }),
+    ...(periodEnd && { periodEnd }),
+    ...(dueDate && { dueDate }),
+    ...(paidAt && { paidAt }),
     hostedInvoiceUrl: invoice.hosted_invoice_url || null,
     invoicePdfUrl: invoice.invoice_pdf || null,
     createdAt: FieldValue.serverTimestamp()

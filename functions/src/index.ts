@@ -107,6 +107,7 @@ export { stripeWebhook } from './webhooks/stripeWebhook'
 
 // Export Stripe customer management
 export { createStripeCustomer, createBillingPortalSession, getOrCreateStripeCustomer } from './stripe/stripeCustomer'
+export { syncStripeCheckoutSession } from './stripe/260209_2208_syncStripeCheckoutSession'
 
 // Function to send welcome email when a new user is created in Firebase Auth
 export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.user().onCreate(async (user) => {

@@ -41,7 +41,7 @@ export default function CustomerPortalButton({
       // Create billing portal session
       const createPortalSession = httpsCallable(functions, 'createBillingPortalSession')
       const result = await createPortalSession({
-        returnUrl: window.location.origin
+        returnUrl: window.location.href
       })
 
       const data = result.data as any
