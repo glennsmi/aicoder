@@ -325,8 +325,7 @@ export default function UserManagementTable() {
                 filteredMembers.map((member) => {
                   const memberTeam = teams.find((t) => t.id === member.teamId)
                   const isSelf = Boolean(user?.id && user.id === member.userId)
-                  const isOwner = Boolean(organization?.ownerId && organization.ownerId === member.userId)
-                  const canRemoveMember = isAdminViewer && !isSelf && !isOwner
+                  const canRemoveMember = isAdminViewer && !isSelf
                   
                   return (
                     <tr key={member.userId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -374,60 +373,70 @@ export default function UserManagementTable() {
                         ) : '-'}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="relative inline-flex" data-actions-root={member.userId}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActionsOpenForUserId((prev) => (prev === member.userId ? null : member.userId))
-                            }
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                            aria-label="Open member actions"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                              />
-                            </svg>
-                          </button>
+                        <div className="flex items-center justify-end gap-2">
+                          {isAdminViewer && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!canRemoveMember) return
+                                openRemoveMemberModal(member)
+                              }}
+                              disabled={!canRemoveMember}
+                              className="px-3 py-1.5 text-xs font-medium rounded-md border border-red-300 text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={isSelf ? 'You cannot remove yourself' : undefined}
+                            >
+                              Remove
+                            </button>
+                          )}
+                          <div className="relative inline-flex" data-actions-root={member.userId}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActionsOpenForUserId((prev) => (prev === member.userId ? null : member.userId))
+                              }
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-md p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              aria-label="Open member actions"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                                />
+                              </svg>
+                            </button>
 
-                          {actionsOpenForUserId === member.userId && (
-                            <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActionsOpenForUserId(null)
-                                  openEditNameModal(member)
-                                }}
-                                className="w-full px-4 py-2.5 text-left text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                              >
-                                Edit name
-                              </button>
-                              {isAdminViewer && (
+                            {actionsOpenForUserId === member.userId && (
+                              <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 overflow-hidden">
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (!canRemoveMember) return
                                     setActionsOpenForUserId(null)
-                                    openRemoveMemberModal(member)
+                                    openEditNameModal(member)
                                   }}
-                                  disabled={!canRemoveMember}
-                                  className="w-full px-4 py-2.5 text-left text-sm text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={
-                                    isSelf
-                                      ? 'You cannot remove yourself'
-                                      : isOwner
-                                      ? 'You cannot remove the organization owner'
-                                      : undefined
-                                  }
+                                  className="w-full px-4 py-2.5 text-left text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                                 >
-                                  Remove user
+                                  Edit name
                                 </button>
-                              )}
-                            </div>
-                          )}
+                                {isAdminViewer && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!canRemoveMember) return
+                                      setActionsOpenForUserId(null)
+                                      openRemoveMemberModal(member)
+                                    }}
+                                    disabled={!canRemoveMember}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={isSelf ? 'You cannot remove yourself' : undefined}
+                                  >
+                                    Remove user
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>

@@ -171,7 +171,7 @@ export default function CursorUsageChart({
   const [aggregationMode, setAggregationMode] = useState<'day' | 'hour'>('hour')
   const [metricMode, setMetricMode] = useState<'tokens' | 'costs'>('tokens')
   const [groupByMode, setGroupByMode] = useState<GroupByMode>('model')
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>('last7d')
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('last30d')
   const [presetAnchorMs, setPresetAnchorMs] = useState<number | null>(null) // end of window for 1D/2D/1W/1M
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
@@ -331,8 +331,6 @@ export default function CursorUsageChart({
     if (hourlyData.length === 0) return
 
     const { earliest, latest } = getDataBoundaries()
-    const dataSpanHours = (latest.getTime() - earliest.getTime()) / (1000 * 60 * 60)
-
     // Reset zoom when new data comes in
     setZoomRange(null)
 
@@ -340,15 +338,10 @@ export default function CursorUsageChart({
     // This ensures saved historical datasets still show up immediately on load.
     setPresetAnchorMs(Math.min(Date.now(), latest.getTime()))
 
-    // Set a sensible default time period based on span.
-    // Users can still switch to Custom for exact bounds.
-    const defaultPeriod: TimePeriod =
-      dataSpanHours <= 24 * 7 ? 'last7d' :
-      dataSpanHours <= 24 * 14 ? 'last14d' :
-      dataSpanHours <= 24 * 30 ? 'last30d' :
-      'last3m'
-    setTimePeriod(defaultPeriod)
-    setAggregationMode(dataSpanHours > 168 ? 'day' : 'hour')
+    // Default to one month (1M) for initial chart view on both
+    // personal and org dashboards, regardless of full data span.
+    setTimePeriod('last30d')
+    setAggregationMode('day')
 
     // Pre-fill Custom with full data bounds (but do not force custom mode).
     setCustomStartDate(earliest.toISOString().split('T')[0])

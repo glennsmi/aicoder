@@ -4,7 +4,6 @@ import { User as UserIcon } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { useDeveloper } from '../contexts/DeveloperContext'
 
 export default function Sidebar() {
   const navigate = useNavigate()
@@ -12,7 +11,6 @@ export default function Sidebar() {
   const { currentUser, user, logout } = useAuth()
   const { organization } = useOrganization() // currentMember unused for now
   const { actualTheme, setTheme } = useTheme()
-  const { isDevMode, testMode, toggleTestMode } = useDeveloper()
   const [collapsed, setCollapsed] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [avatarFailed, setAvatarFailed] = useState(false)
@@ -314,6 +312,20 @@ export default function Sidebar() {
         {/* Spacer to push collapse button to bottom */}
         <div className="flex-1"></div>
 
+        {/* Claude Code help CTA */}
+        <div className="px-2 pb-2">
+          <button
+            onClick={handleOpenClaudeCodeHelp}
+            className="w-full flex items-center gap-3 px-3 py-2.5 bg-accent-400/20 text-accent-300 rounded-lg hover:bg-accent-400/30 transition-all font-medium"
+            title={collapsed ? 'How to add Claude Code data' : undefined}
+          >
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.55-1.646 2.087-3 3.772-3 2.071 0 3.75 1.679 3.75 3.75 0 1.38-.75 2.586-1.864 3.237-.59.344-.886.517-.979.657-.093.14-.093.258-.093.496V14M12 17h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {!collapsed && <span className="text-sm text-left">How to add Claude Code data</span>}
+          </button>
+        </div>
+
         {/* Collapse/Expand Button */}
         <div className="px-2 pb-4">
           <button
@@ -330,33 +342,6 @@ export default function Sidebar() {
 
       {/* Bottom Section */}
       <div className="border-t border-secondary-700">
-        {/* Developer Test Mode Toggle - Only visible to developers */}
-        {isDevMode && (
-          <button
-            onClick={toggleTestMode}
-            className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${testMode
-                ? 'bg-yellow-900/30 text-yellow-400 hover:bg-yellow-900/40'
-                : 'text-white/80 hover:bg-secondary-800 hover:text-white'
-              }`}
-            title={collapsed ? (testMode ? 'Test mode ON' : 'Test mode OFF') : undefined}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-            </svg>
-            {!collapsed && (
-              <div className="flex-1 flex items-center justify-between">
-                <span className="text-sm font-medium">Test Mode</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${testMode
-                    ? 'bg-yellow-400 text-neutral-900'
-                    : 'bg-secondary-700 text-white/60'
-                  }`}>
-                  {testMode ? 'ON' : 'OFF'}
-                </span>
-              </div>
-            )}
-          </button>
-        )}
-
         {/* Theme Toggle */}
         <button
           onClick={() => setTheme(actualTheme === 'dark' ? 'light' : 'dark')}
@@ -471,20 +456,6 @@ export default function Sidebar() {
             </div>
           </div>
         )}
-
-        {/* Claude Code help CTA */}
-        <div className="px-2 pb-3">
-          <button
-            onClick={handleOpenClaudeCodeHelp}
-            className="w-full flex items-center gap-3 px-3 py-2.5 bg-accent-400/20 text-accent-300 rounded-lg hover:bg-accent-400/30 transition-all font-medium"
-            title={collapsed ? 'How to add Claude Code data' : undefined}
-          >
-            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.55-1.646 2.087-3 3.772-3 2.071 0 3.75 1.679 3.75 3.75 0 1.38-.75 2.586-1.864 3.237-.59.344-.886.517-.979.657-.093.14-.093.258-.093.496V14M12 17h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {!collapsed && <span className="text-sm text-left">How to add Claude Code data</span>}
-          </button>
-        </div>
       </div>
     </div>
   )
