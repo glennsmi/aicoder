@@ -1,7 +1,18 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import * as admin from 'firebase-admin'
 import crypto from 'node:crypto'
-import { CursorUsageV2, TokenBreakdown } from '../shared'
+import {
+  CursorUsageV2,
+  ModelResolutionMatchType,
+  resolveCanonicalModelNameWithDiagnostics,
+  TokenBreakdown,
+  MODEL_MAPPING_VERSION,
+  normalizeModelMappingSourceKey,
+  sourceAliasFieldName,
+  toDisplayModelName,
+  toModelMappingDocId,
+} from '../shared'
+import { sendAdminNotification } from '../utils/email'
 
 type IngestCcusageDailyRequest = {
   importId?: string
@@ -17,6 +28,19 @@ type IngestCcusageDailyResponse = {
   minEventAtMs?: number
   maxEventAtMs?: number
   models: string[]
+  mappingDiagnostics: {
+    source: string
+    rowsEvaluated: number
+    matchedRows: number
+    unmatchedRows: number
+    matchTypeCounts: Record<ModelResolutionMatchType, number>
+    unmatchedModels: Array<{
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>
+  }
 }
 
 function sha256Base64Url(input: string): string {
@@ -32,11 +56,41 @@ function costUsdToMicros(costUsd: number): number {
   return Math.round(costUsd * 1_000_000)
 }
 
-function normalizeModelNameForDisplay(raw: string): string {
-  const trimmed = String(raw || '').trim()
-  if (!trimmed) return ''
-  // Prefix so charts can differentiate Cursor vs Claude Code usage.
-  return `claude_code/${trimmed}`
+type MappingObservation = {
+  canonicalName: string
+  sourceKey: ReturnType<typeof normalizeModelMappingSourceKey>
+  aliases: Set<string>
+}
+
+async function persistModelMappingObservations(
+  db: FirebaseFirestore.Firestore,
+  observations: Map<string, MappingObservation>
+): Promise<void> {
+  if (observations.size === 0) return
+  const writeBatch = db.batch()
+  for (const observation of observations.values()) {
+    const canonicalName = String(observation.canonicalName || '').trim().toLowerCase()
+    if (!canonicalName) continue
+    const aliases = Array.from(observation.aliases).map((v) => String(v || '').trim().toLowerCase()).filter(Boolean)
+    const docRef = db.collection('modelMappings').doc(toModelMappingDocId(canonicalName))
+    const sourceAliasField = sourceAliasFieldName(observation.sourceKey)
+    const payload: Record<string, unknown> = {
+      canonicalName,
+      displayName: toDisplayModelName(canonicalName),
+      version: MODEL_MAPPING_VERSION,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      allAliases: admin.firestore.FieldValue.arrayUnion(canonicalName, ...aliases),
+      sources: admin.firestore.FieldValue.arrayUnion(observation.sourceKey),
+    }
+    if (sourceAliasField) {
+      payload[`aliasesBySource.${sourceAliasField}`] =
+        aliases.length > 0
+          ? admin.firestore.FieldValue.arrayUnion(...aliases)
+          : admin.firestore.FieldValue.arrayUnion(canonicalName)
+    }
+    writeBatch.set(docRef, payload, { merge: true })
+  }
+  await writeBatch.commit()
 }
 
 function extractTokens(row: CursorUsageV2): {
@@ -80,6 +134,7 @@ function buildFingerprint(input: {
   sourceType: string
   eventAtMs: number
   modelName: string
+  expandedModelName: string
   tokens: ReturnType<typeof extractTokens>
   cost: { hasCost: boolean; amountMicros?: number }
 }): string {
@@ -88,6 +143,7 @@ function buildFingerprint(input: {
     input.sourceType,
     String(input.eventAtMs),
     input.modelName.trim(),
+    input.expandedModelName.trim(),
     String(input.tokens.total),
     String(input.tokens.input ?? ''),
     String(input.tokens.output ?? ''),
@@ -179,7 +235,26 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
       })
 
       if (guardResult.skip) {
-        return { importId, saved: 0, duplicates: rows.length, models: [] }
+        return {
+          importId,
+          saved: 0,
+          duplicates: rows.length,
+          models: [],
+          mappingDiagnostics: {
+            source: 'ccusage_daily_json',
+            rowsEvaluated: 0,
+            matchedRows: 0,
+            unmatchedRows: 0,
+            matchTypeCounts: {
+              canonical_exact: 0,
+              source_alias: 0,
+              seed_alias_other_source: 0,
+              heuristic: 0,
+              empty: 0,
+            },
+            unmatchedModels: [],
+          },
+        }
       }
     }
 
@@ -212,6 +287,23 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
     let minEventAtMs: number | undefined
     let maxEventAtMs: number | undefined
     const models = new Set<string>()
+    const mappingObservations = new Map<string, MappingObservation>()
+    let rowsEvaluated = 0
+    let matchedRows = 0
+    let unmatchedRows = 0
+    const matchTypeCounts: Record<ModelResolutionMatchType, number> = {
+      canonical_exact: 0,
+      source_alias: 0,
+      seed_alias_other_source: 0,
+      heuristic: 0,
+      empty: 0,
+    }
+    const unmatchedModelMap = new Map<string, {
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>()
 
     bulkWriter.onWriteError((err) => {
       const status: any = (err as any).status || (err as any).code
@@ -242,13 +334,44 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
       const eventAtMs = Number(row.timestamp)
       if (!Number.isFinite(eventAtMs) || eventAtMs <= 0) continue
 
-      const modelNameRaw = String(row.model || '').trim()
-      if (!modelNameRaw) continue
-
-      const modelName = normalizeModelNameForDisplay(modelNameRaw)
+      const expandedModelName = String(row.expandedModelName || row.model || '').trim()
+      const resolution = resolveCanonicalModelNameWithDiagnostics(
+        row.model || expandedModelName,
+        'ccusage_daily_json'
+      )
+      const modelName = resolution.canonicalName
+      rowsEvaluated += 1
+      matchTypeCounts[resolution.matchType] += 1
+      if (resolution.isSeedMatch) {
+        matchedRows += 1
+      } else if (resolution.matchType !== 'empty') {
+        unmatchedRows += 1
+        const rawModelName = String(row.model || expandedModelName || '').trim()
+        const unmatchedKey = `${rawModelName}|${modelName}`
+        const prev = unmatchedModelMap.get(unmatchedKey)
+        if (prev) {
+          prev.occurrences += 1
+        } else {
+          unmatchedModelMap.set(unmatchedKey, {
+            rawModelName,
+            canonicalSuggestion: modelName,
+            source: 'ccusage_daily_json',
+            occurrences: 1,
+          })
+        }
+      }
       if (!modelName) continue
 
       models.add(modelName)
+      const sourceKey = normalizeModelMappingSourceKey('ccusage_daily_json')
+      const existingObservation = mappingObservations.get(modelName) ?? {
+        canonicalName: modelName,
+        sourceKey,
+        aliases: new Set<string>(),
+      }
+      if (expandedModelName) existingObservation.aliases.add(expandedModelName)
+      if (row.model) existingObservation.aliases.add(String(row.model))
+      mappingObservations.set(modelName, existingObservation)
 
       const tokens = extractTokens(row)
 
@@ -260,6 +383,7 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
         sourceType: 'ccusage_daily_json',
         eventAtMs,
         modelName,
+        expandedModelName,
         tokens,
         cost: { hasCost: costHasCost, amountMicros: costAmountMicros },
       })
@@ -278,7 +402,10 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
         },
         eventAtMs,
         day: toDayUtc(eventAtMs),
-        model: { name: modelName },
+        model: {
+          name: modelName,
+          ...(expandedModelName ? { expandedName: expandedModelName } : {}),
+        },
         tokens,
         cost: {
           hasCost: costHasCost,
@@ -297,7 +424,22 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
 
       if (organizationId) doc.organizationId = organizationId
       if (teamId) doc.teamId = teamId
-      if (row.raw && typeof row.raw === 'object') doc.raw = row.raw
+      if (row.raw && typeof row.raw === 'object') {
+        doc.raw = row.raw
+      }
+      if (expandedModelName) {
+        const existingRaw = (doc.raw && typeof doc.raw === 'object') ? (doc.raw as Record<string, unknown>) : {}
+        const mergedExpandedNames = new Set<string>(
+          Array.isArray((existingRaw as any).expandedModelNames)
+            ? ((existingRaw as any).expandedModelNames as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+            : []
+        )
+        mergedExpandedNames.add(expandedModelName)
+        doc.raw = {
+          ...existingRaw,
+          expandedModelNames: Array.from(mergedExpandedNames),
+        }
+      }
 
       bulkWriter.create(docRef, doc)
         .then(() => {
@@ -324,6 +466,48 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
     }
 
     await bulkWriter.close()
+    await persistModelMappingObservations(db, mappingObservations)
+
+    const unmatchedModels = Array.from(unmatchedModelMap.values())
+      .sort((a, b) => b.occurrences - a.occurrences || a.rawModelName.localeCompare(b.rawModelName))
+      .slice(0, 25)
+
+    if (unmatchedModels.length > 0) {
+      const diagnosticsPayload = {
+        importId,
+        userId: uid,
+        source: 'ccusage_daily_json',
+        rowsEvaluated,
+        matchedRows,
+        unmatchedRows,
+        matchTypeCounts,
+        topUnmatchedModels: unmatchedModels,
+      }
+
+      let shouldSendAlert = true
+      if (importGuardRef) {
+        try {
+          const guardAlert = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(importGuardRef)
+            const alreadySent = Boolean((snap.exists ? (snap.data() as any) : undefined)?.mappingAlertSent)
+            if (alreadySent) return false
+            tx.set(importGuardRef, { mappingAlertSent: true }, { merge: true })
+            return true
+          })
+          shouldSendAlert = guardAlert
+        } catch (e) {
+          console.error('Failed to set mappingAlertSent guard:', e)
+        }
+      }
+
+      if (shouldSendAlert) {
+        void sendAdminNotification(
+          'Unmatched model aliases detected (ccusage JSON import)',
+          'The import used heuristic model mapping for one or more aliases.',
+          diagnosticsPayload
+        )
+      }
+    }
 
     if (importGuardRef) {
       try {
@@ -334,6 +518,14 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
             updatedAtMs: Date.now(),
             saved,
             duplicates,
+            mappingDiagnostics: {
+              source: 'ccusage_daily_json',
+              rowsEvaluated,
+              matchedRows,
+              unmatchedRows,
+              matchTypeCounts,
+              unmatchedModels,
+            },
           },
           { merge: true }
         )
@@ -349,6 +541,14 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
       minEventAtMs,
       maxEventAtMs,
       models: Array.from(models).sort(),
+      mappingDiagnostics: {
+        source: 'ccusage_daily_json',
+        rowsEvaluated,
+        matchedRows,
+        unmatchedRows,
+        matchTypeCounts,
+        unmatchedModels,
+      },
     }
   }
 )

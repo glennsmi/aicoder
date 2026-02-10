@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { User as UserIcon } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -14,6 +15,9 @@ export default function Sidebar() {
   const { isDevMode, testMode, toggleTestMode } = useDeveloper()
   const [collapsed, setCollapsed] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [avatarFailed, setAvatarFailed] = useState(false)
+  const usageHelpDialogStorageKey = 'aicoder:open-upload-help-tab'
+  const usageHelpDialogEventName = 'aicoder:open-upload-help'
 
   // Check if user is admin (for legacy admin panel) - unused for now
   // const isAdmin = currentUser && currentUser.email === 'glenn@aicoder.guru'
@@ -30,6 +34,30 @@ export default function Sidebar() {
     } catch (error) {
       console.error('Logout failed:', error)
     }
+  }
+
+  const handleOpenClaudeCodeHelp = () => {
+    try {
+      window.sessionStorage.setItem(usageHelpDialogStorageKey, 'ccusage_json')
+    } catch {
+      // Ignore storage failures (private mode/quota); event dispatch still works.
+    }
+
+    const openDialog = () => {
+      window.dispatchEvent(
+        new CustomEvent(usageHelpDialogEventName, {
+          detail: { tab: 'ccusage_json' },
+        })
+      )
+    }
+
+    if (location.pathname !== '/') {
+      navigate('/')
+      window.setTimeout(openDialog, 250)
+      return
+    }
+
+    openDialog()
   }
 
   // Navigation items based on role/tier
@@ -185,6 +213,14 @@ export default function Sidebar() {
   }
 
   const navItems = getNavigationItems()
+  const profileImageUrl = (user as any)?.profileImageUrl || currentUser?.photoURL || null
+  const organizationLogoUrl = typeof organization?.settings?.branding?.logoUrl === 'string'
+    ? organization.settings.branding.logoUrl
+    : null
+
+  useEffect(() => {
+    setAvatarFailed(false)
+  }, [profileImageUrl])
 
   if (!currentUser) return null
 
@@ -192,24 +228,47 @@ export default function Sidebar() {
     <div className={`flex flex-col h-screen bg-secondary-900 text-white transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}>
       {/* Logo */}
       <div className="flex items-center p-4 border-b border-secondary-700">
-        {!collapsed && (
-          <div className="flex items-center gap-2">
-            <img
-              src="/logos/jade-guru.svg"
-              alt="AICoder.Guru"
-              className="w-8 h-8 flex-shrink-0"
-            />
-            <div>
-              <h1 className="font-bold text-sm">AICoder.Guru</h1>
-            </div>
-          </div>
-        )}
-        {collapsed && (
-          <img
-            src="/logos/jade-guru.svg"
-            alt="AICoder.Guru"
-            className="w-8 h-8 mx-auto"
-          />
+        {organizationLogoUrl ? (
+          <>
+            {!collapsed && (
+              <div className="w-full flex items-center">
+                <img
+                  src={organizationLogoUrl}
+                  alt={`${organization?.name || 'Organization'} logo`}
+                  className="h-8 w-auto max-w-[190px] object-contain"
+                />
+              </div>
+            )}
+            {collapsed && (
+              <img
+                src={organizationLogoUrl}
+                alt={`${organization?.name || 'Organization'} logo`}
+                className="h-8 w-8 object-contain mx-auto rounded"
+              />
+            )}
+          </>
+        ) : (
+          <>
+            {!collapsed && (
+              <div className="flex items-center gap-2">
+                <img
+                  src="/logos/jade-guru.svg"
+                  alt="AICoder.Guru"
+                  className="w-8 h-8 flex-shrink-0"
+                />
+                <div>
+                  <h1 className="font-bold text-sm">AICoder.Guru</h1>
+                </div>
+              </div>
+            )}
+            {collapsed && (
+              <img
+                src="/logos/jade-guru.svg"
+                alt="AICoder.Guru"
+                className="w-8 h-8 mx-auto"
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -323,10 +382,15 @@ export default function Sidebar() {
             className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-secondary-800 transition-colors"
           >
             <div className="w-8 h-8 bg-accent-400 rounded-full flex items-center justify-center text-neutral-900 font-semibold text-sm flex-shrink-0 overflow-hidden">
-              {currentUser.photoURL ? (
-                <img src={currentUser.photoURL} alt={currentUser.displayName || 'User'} className="w-full h-full object-cover" />
+              {profileImageUrl && !avatarFailed ? (
+                <img
+                  src={profileImageUrl}
+                  alt={currentUser.displayName || 'User'}
+                  className="w-full h-full object-cover"
+                  onError={() => setAvatarFailed(true)}
+                />
               ) : (
-                <span>{(currentUser.email?.[0] || 'U').toUpperCase()}</span>
+                <UserIcon className="w-5 h-5 text-primary-500" aria-label="Default user icon" />
               )}
             </div>
             {!collapsed && (
@@ -378,7 +442,7 @@ export default function Sidebar() {
                     />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  Account Settings
+                  User Settings
                 </button>
 
                 <button
@@ -393,6 +457,33 @@ export default function Sidebar() {
               </div>
             </>
           )}
+        </div>
+
+        {organizationLogoUrl && !collapsed && (
+          <div className="px-4 pb-2">
+            <div className="flex items-center gap-2 text-white/70">
+              <img
+                src="/logos/jade-guru.svg"
+                alt="AICoder.Guru"
+                className="w-4 h-4 flex-shrink-0"
+              />
+              <span className="text-xs font-semibold uppercase tracking-wide">AICoder.Guru</span>
+            </div>
+          </div>
+        )}
+
+        {/* Claude Code help CTA */}
+        <div className="px-2 pb-3">
+          <button
+            onClick={handleOpenClaudeCodeHelp}
+            className="w-full flex items-center gap-3 px-3 py-2.5 bg-accent-400/20 text-accent-300 rounded-lg hover:bg-accent-400/30 transition-all font-medium"
+            title={collapsed ? 'How to add Claude Code data' : undefined}
+          >
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.55-1.646 2.087-3 3.772-3 2.071 0 3.75 1.679 3.75 3.75 0 1.38-.75 2.586-1.864 3.237-.59.344-.886.517-.979.657-.093.14-.093.258-.093.496V14M12 17h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {!collapsed && <span className="text-sm text-left">How to add Claude Code data</span>}
+          </button>
         </div>
       </div>
     </div>

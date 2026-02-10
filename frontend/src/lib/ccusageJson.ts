@@ -1,4 +1,5 @@
 import type { CursorUsageImportSummary, CursorUsageV2, TokenBreakdown } from '@shared'
+import { resolveCanonicalModelName } from '@shared'
 
 type CcusageDailyEntry = {
   date: string
@@ -9,7 +10,13 @@ type CcusageDailyEntry = {
   totalTokens: number
   totalCost?: number
   costUSD?: number
-  breakdown?: Record<string, Partial<CcusageDailyEntry> & { costUSD?: number; totalCost?: number }>
+  breakdown?: Record<string, CcusageBreakdownEntry>
+}
+
+type CcusageBreakdownEntry = Partial<CcusageDailyEntry> & {
+  costUSD?: number
+  totalCost?: number
+  expandedModelNames?: string[]
 }
 
 type CcusageDailyJsonStandard = {
@@ -61,6 +68,106 @@ function toTokenBreakdown(e: Pick<
   return { inputWithCacheWrite, inputWithoutCacheWrite, cacheRead, output, total }
 }
 
+function parseBreakdownRecordLike(input: unknown): Record<string, CcusageBreakdownEntry> | undefined {
+  if (!isRecord(input)) return undefined
+  return input as Record<string, CcusageBreakdownEntry>
+}
+
+function parseModelBreakdownsArray(
+  input: unknown
+): Record<string, CcusageBreakdownEntry> | undefined {
+  if (!Array.isArray(input)) return undefined
+
+  const out: Record<string, CcusageBreakdownEntry> = {}
+
+  for (const item of input) {
+    if (!isRecord(item)) continue
+    const rawName = [
+      (item as any).modelName,
+      (item as any).model,
+      (item as any).expandedModelName,
+      (item as any).expandedModel,
+      (item as any).name,
+      (item as any).id,
+    ]
+      .map((v) => (typeof v === 'string' ? String(v).trim() : ''))
+      .find(Boolean) || ''
+    const expandedModelName = String(rawName || '').trim()
+    const modelName = expandedModelName || resolveCanonicalModelName(rawName, 'ccusage_daily_json')
+    if (!modelName) continue
+
+    const prev = isRecord(out[modelName]) ? (out[modelName] as any) : {}
+    const expandedModelNames = new Set<string>(
+      Array.isArray(prev.expandedModelNames)
+        ? (prev.expandedModelNames as string[]).map((v) => String(v).trim()).filter(Boolean)
+        : []
+    )
+    if (expandedModelName) expandedModelNames.add(expandedModelName)
+
+    out[modelName] = {
+      inputTokens: toNumber(prev.inputTokens) + toNumber((item as any).inputTokens),
+      outputTokens: toNumber(prev.outputTokens) + toNumber((item as any).outputTokens),
+      cacheCreationTokens:
+        toNumber(prev.cacheCreationTokens) +
+        toNumber((item as any).cacheCreationTokens ?? (item as any).cacheWriteTokens),
+      cacheReadTokens: toNumber(prev.cacheReadTokens) + toNumber((item as any).cacheReadTokens),
+      totalTokens: toNumber(prev.totalTokens) + toNumber((item as any).totalTokens),
+      costUSD:
+        (toCostUsd(prev.costUSD ?? prev.totalCost) ?? 0) +
+        (toCostUsd((item as any).costUSD ?? (item as any).totalCost ?? (item as any).cost) ?? 0),
+      expandedModelNames: Array.from(expandedModelNames).sort(),
+    }
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function pickExpandedModelName(
+  canonicalModelName: string,
+  breakdownModelKey: string,
+  breakdown: Record<string, unknown>
+): string {
+  const normalizedCanonical = resolveCanonicalModelName(canonicalModelName, 'ccusage_daily_json')
+  const candidates = [
+    typeof breakdown.modelName === 'string' ? String(breakdown.modelName).trim() : '',
+    typeof breakdown.model === 'string' ? String(breakdown.model).trim() : '',
+    typeof (breakdown as any).expandedModelName === 'string' ? String((breakdown as any).expandedModelName).trim() : '',
+    typeof (breakdown as any).expandedModel === 'string' ? String((breakdown as any).expandedModel).trim() : '',
+    typeof (breakdown as any).name === 'string' ? String((breakdown as any).name).trim() : '',
+    typeof (breakdown as any).id === 'string' ? String((breakdown as any).id).trim() : '',
+    ...(Array.isArray((breakdown as any).expandedModelNames)
+      ? ((breakdown as any).expandedModelNames as unknown[])
+          .map((v) => String(v).trim())
+          .filter(Boolean)
+      : []),
+    String(breakdownModelKey || '').trim(),
+  ].filter(Boolean)
+
+  if (candidates.length === 0) return breakdownModelKey
+
+  // Prefer a concrete expanded label over the normalized canonical form.
+  const nonCanonical = candidates.filter((name) => {
+    return normalizedCanonical
+      ? name.toLowerCase() !== normalizedCanonical.toLowerCase()
+      : true
+  })
+
+  const ranked = (nonCanonical.length > 0 ? nonCanonical : candidates).sort((a, b) => {
+    const aNorm = resolveCanonicalModelName(a, 'ccusage_daily_json')
+    const bNorm = resolveCanonicalModelName(b, 'ccusage_daily_json')
+    const aMatchesCanonical = normalizedCanonical && aNorm === normalizedCanonical
+    const bMatchesCanonical = normalizedCanonical && bNorm === normalizedCanonical
+
+    // Prefer values that map to the same canonical model (usually variant suffixes).
+    if (aMatchesCanonical !== bMatchesCanonical) return aMatchesCanonical ? -1 : 1
+    // Then prefer the most specific string.
+    if (a.length !== b.length) return b.length - a.length
+    return a.localeCompare(b)
+  })
+
+  return ranked[0] || breakdownModelKey
+}
+
 function parseDailyEntry(raw: unknown): CcusageDailyEntry | null {
   if (!isRecord(raw)) return null
   const date = typeof raw.date === 'string' ? raw.date : null
@@ -76,11 +183,9 @@ function parseDailyEntry(raw: unknown): CcusageDailyEntry | null {
   const costUSD = toCostUsd((raw as any).costUSD)
 
   const breakdown =
-    isRecord((raw as any).breakdown)
-      ? ((raw as any).breakdown as any)
-      : isRecord((raw as any).modelBreakdowns)
-        ? ((raw as any).modelBreakdowns as any)
-        : undefined
+    parseBreakdownRecordLike((raw as any).breakdown) ??
+    parseBreakdownRecordLike((raw as any).modelBreakdowns) ??
+    parseModelBreakdownsArray((raw as any).modelBreakdowns)
 
   return {
     date,
@@ -151,6 +256,10 @@ function flattenDailyEntries(obj: unknown): { entries: CcusageDailyEntry[]; erro
           for (const modelName of Object.keys(add)) {
             const cur = isRecord(out[modelName]) ? (out[modelName] as any) : {}
             const inc = isRecord(add[modelName]) ? (add[modelName] as any) : {}
+            const expandedModelNames = new Set<string>([
+              ...(Array.isArray(cur.expandedModelNames) ? cur.expandedModelNames : []),
+              ...(Array.isArray(inc.expandedModelNames) ? inc.expandedModelNames : []),
+            ].map((v) => String(v).trim()).filter(Boolean))
             out[modelName] = {
               inputTokens: toNumber(cur.inputTokens) + toNumber(inc.inputTokens),
               outputTokens: toNumber(cur.outputTokens) + toNumber(inc.outputTokens),
@@ -158,6 +267,7 @@ function flattenDailyEntries(obj: unknown): { entries: CcusageDailyEntry[]; erro
               cacheReadTokens: toNumber(cur.cacheReadTokens) + toNumber(inc.cacheReadTokens),
               totalTokens: toNumber(cur.totalTokens) + toNumber(inc.totalTokens),
               costUSD: (toCostUsd(cur.costUSD) ?? 0) + (toCostUsd(inc.costUSD) ?? 0),
+              expandedModelNames: Array.from(expandedModelNames).sort(),
             }
           }
           prev.breakdown = out
@@ -241,15 +351,30 @@ export function parseCcusageDailyJsonText(
           continue
         }
 
-        const id = `ccusage_daily_${e.date}_${modelName}`
+        const canonicalModelName = resolveCanonicalModelName(modelName, 'ccusage_daily_json')
+        if (!canonicalModelName) {
+          summary.skippedRows += 1
+          continue
+        }
+        const expandedModelName = pickExpandedModelName(canonicalModelName, modelName, b as Record<string, unknown>)
+
+        // Include expanded model name in ID so variants do not collapse into one row.
+        const id = `ccusage_daily_${e.date}_${canonicalModelName}_${encodeURIComponent(expandedModelName || modelName)}`
         out.push({
           id,
           ...base,
-          model: modelName,
+          model: canonicalModelName,
+          expandedModelName,
+          source: 'ccusage_daily_json',
           tokens,
           tokenBreakdown: tb,
           costUsd: typeof costUsd === 'number' ? costUsd : undefined,
-          raw: { source: 'ccusage', report: 'daily', ...(isRecord(parsed) ? { hasProjects: Boolean((parsed as any).projects) } : {}) },
+          raw: {
+            source: 'ccusage',
+            report: 'daily',
+            expandedModelNames: Array.isArray((b as any).expandedModelNames) ? (b as any).expandedModelNames : [expandedModelName],
+            ...(isRecord(parsed) ? { hasProjects: Boolean((parsed as any).projects) } : {}),
+          },
         })
         summary.acceptedRows += 1
       }
@@ -271,6 +396,7 @@ export function parseCcusageDailyJsonText(
       id,
       ...base,
       model: 'TOTAL',
+      source: 'ccusage_daily_json',
       tokens: tb.total,
       tokenBreakdown: tb,
       costUsd: typeof costUsd === 'number' ? costUsd : undefined,

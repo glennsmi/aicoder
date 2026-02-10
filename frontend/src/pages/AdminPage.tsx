@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import AdminCurrencyManager from '@/components/AdminCurrencyManager'
+import ModelMappingViewer from '@/components/260210_1550_ModelMappingViewer'
 import { useAuth } from '../contexts/AuthContext'
 import { adminRebuildUserAggregations, debugContentHashes } from '../lib/firestore'
 
@@ -28,7 +29,8 @@ export default function AdminPage({ onBackToMain }: AdminPageProps) {
   } | null>(null)
 
   // Check if user is admin
-  const isAdmin = currentUser && currentUser.email === 'glenn@aicoder.guru'
+  const adminEmails = new Set(['glenn@aicoder.guru', 'glenn@fueld.ai'])
+  const isAdmin = currentUser?.email ? adminEmails.has(currentUser.email) : false
 
   const handleRebuildAggregations = async () => {
     if (!rebuildUserId.trim()) {
@@ -124,7 +126,7 @@ export default function AdminPage({ onBackToMain }: AdminPageProps) {
             <div className="flex items-center gap-4">
               <div className="inline-flex items-center px-4 py-2 bg-white/20 rounded-full text-white backdrop-blur-sm">
                 <span className="mr-2">👤</span>
-                {currentUser.displayName || currentUser.email?.split('@')[0]}
+                {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Admin'}
               </div>
               
               <button 
@@ -348,6 +350,17 @@ export default function AdminPage({ onBackToMain }: AdminPageProps) {
           </div>
           
           <AdminCurrencyManager />
+        </div>
+
+        {/* Model Mapping Section */}
+        <div className="space-y-6 mt-12">
+          <div>
+            <h2 className="text-2xl font-bold text-gunmetal-900 mb-2">Model Mapping</h2>
+            <p className="text-gunmetal-700 mb-6">
+              Read-only mapping of source model aliases to canonical model names across CSV, JSON, and API sources.
+            </p>
+          </div>
+          <ModelMappingViewer />
         </div>
 
         {/* Future Admin Sections */}

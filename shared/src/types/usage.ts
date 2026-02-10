@@ -11,6 +11,8 @@ export interface CursorUsageV2 {
   date: string
   timestamp: number
   model: string
+  expandedModelName?: string
+  source?: string
   tokens: number  // For backward compatibility - will be total tokens
   tokenBreakdown?: TokenBreakdown  // Detailed token breakdown
   costUsd?: number | null

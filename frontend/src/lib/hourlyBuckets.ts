@@ -14,6 +14,7 @@ type BucketAcc = {
   breakdown: TokenBreakdown | null
   sawBreakdown: boolean
   sawNoBreakdown: boolean
+  expandedModelTokenTotals: Record<string, number>
 }
 
 /**
@@ -22,8 +23,12 @@ type BucketAcc = {
  * This is intentionally "Crossfilter-inspired": we shrink the working set up-front
  * so downstream chart/table computations operate over far fewer rows.
  */
-export function aggregateCursorUsageV2ToHourlyByModel(rows: CursorUsageV2[]): CursorUsageV2[] {
+export function aggregateCursorUsageV2ToHourlyByModel(
+  rows: CursorUsageV2[],
+  options: { groupBy?: 'model' | 'expandedModel' | 'source' } = {}
+): CursorUsageV2[] {
   if (!rows || rows.length === 0) return []
+  const groupBy = options.groupBy ?? 'model'
 
   const buckets = new Map<string, BucketAcc>()
 
@@ -35,10 +40,21 @@ export function aggregateCursorUsageV2ToHourlyByModel(rows: CursorUsageV2[]): Cu
     if (!Number.isFinite(ts)) continue
 
     const start = hourStartMs(ts)
-    const model = r.model || ''
-    if (!model) continue
+    const consolidatedModel = String(r.model || '').trim()
+    const rawExpandedModelName = Array.isArray((r.raw as any)?.expandedModelNames)
+      ? String(((r.raw as any).expandedModelNames as unknown[]).find((v) => String(v || '').trim()) || '').trim()
+      : ''
+    const expandedModelName = String(r.expandedModelName || rawExpandedModelName || consolidatedModel).trim()
+    const source = String(r.source || '').trim() || 'unknown'
+    const groupName =
+      groupBy === 'expandedModel'
+        ? expandedModelName
+        : groupBy === 'source'
+          ? source
+          : consolidatedModel
+    if (!groupName) continue
 
-    const key = `${start}|${model}`
+    const key = `${start}|${groupName}`
     const prev = buckets.get(key)
 
     const tokens = typeof r.tokens === 'number' && Number.isFinite(r.tokens) ? r.tokens : 0
@@ -47,7 +63,7 @@ export function aggregateCursorUsageV2ToHourlyByModel(rows: CursorUsageV2[]): Cu
     if (!prev) {
       buckets.set(key, {
         timestamp: start,
-        model,
+        model: groupName,
         tokens,
         costUsd,
         breakdown: r.tokenBreakdown
@@ -61,12 +77,19 @@ export function aggregateCursorUsageV2ToHourlyByModel(rows: CursorUsageV2[]): Cu
           : null,
         sawBreakdown: Boolean(r.tokenBreakdown),
         sawNoBreakdown: !r.tokenBreakdown,
+        expandedModelTokenTotals: expandedModelName
+          ? { [expandedModelName]: tokens }
+          : {},
       })
       continue
     }
 
     prev.tokens += tokens
     prev.costUsd += costUsd
+    if (expandedModelName) {
+      prev.expandedModelTokenTotals[expandedModelName] =
+        (prev.expandedModelTokenTotals[expandedModelName] || 0) + tokens
+    }
 
     if (r.tokenBreakdown) {
       prev.sawBreakdown = true
@@ -103,9 +126,14 @@ export function aggregateCursorUsageV2ToHourlyByModel(rows: CursorUsageV2[]): Cu
       date: new Date(b.timestamp).toISOString(),
       timestamp: b.timestamp,
       model: b.model,
+      expandedModelName: groupBy === 'expandedModel' ? b.model : undefined,
+      source: groupBy === 'source' ? b.model : undefined,
       tokens: b.tokens,
       tokenBreakdown,
       costUsd: b.costUsd,
+      raw: {
+        expandedModelTokenTotals: b.expandedModelTokenTotals,
+      },
     })
   }
 

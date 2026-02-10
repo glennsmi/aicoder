@@ -25,9 +25,22 @@ import {
   onSnapshot,
   Unsubscribe
 } from 'firebase/firestore'
-import { auth, db, functions } from '../config/firebaseApp'
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { auth, db, functions, storage } from '../config/firebaseApp'
 import { User, Invitation, OrganizationRole } from '@shared'
 import { httpsCallable } from 'firebase/functions'
+
+function isFirebaseStorageUrl(url: string): boolean {
+  return url.includes('firebasestorage.googleapis.com') || url.includes('storage.googleapis.com')
+}
+
+function getImageExtensionFromContentType(contentType: string | undefined): string {
+  const normalized = String(contentType || '').toLowerCase()
+  if (normalized.includes('png')) return 'png'
+  if (normalized.includes('webp')) return 'webp'
+  if (normalized.includes('gif')) return 'gif'
+  return 'jpg'
+}
 
 interface AuthContextType {
   currentUser: FirebaseUser | null
@@ -118,6 +131,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return null
     } catch (error) {
       console.error('Error fetching user data:', error)
+      return null
+    }
+  }
+
+  // For provider-auth users (e.g. Google), copy external avatar to our own Storage path once.
+  // This gives us a durable image URL we control and can render reliably in the app.
+  async function mirrorAuthAvatarToStorage(firebaseUser: FirebaseUser, userData: User | null): Promise<string | null> {
+    const authPhotoUrl = String(firebaseUser.photoURL || '').trim()
+    const firestorePhotoUrl = String((userData as any)?.profileImageUrl || '').trim()
+
+    if (!authPhotoUrl) return null
+    if (isFirebaseStorageUrl(authPhotoUrl)) return authPhotoUrl
+    if (firestorePhotoUrl && isFirebaseStorageUrl(firestorePhotoUrl)) {
+      try {
+        if (authPhotoUrl !== firestorePhotoUrl) {
+          await updateProfile(firebaseUser, { photoURL: firestorePhotoUrl })
+        }
+      } catch (e) {
+        console.warn('Failed to sync auth avatar URL from Firestore:', e)
+      }
+      return firestorePhotoUrl
+    }
+
+    try {
+      const response = await fetch(authPhotoUrl)
+      if (!response.ok) throw new Error(`Avatar fetch failed (${response.status})`)
+
+      const avatarBlob = await response.blob()
+      if (!String(avatarBlob.type || '').startsWith('image/')) {
+        throw new Error('Avatar content is not an image')
+      }
+
+      const extension = getImageExtensionFromContentType(avatarBlob.type)
+      const objectPath = `users/${firebaseUser.uid}/avatar/provider_${Date.now()}.${extension}`
+      const objectRef = ref(storage, objectPath)
+
+      await uploadBytes(objectRef, avatarBlob, {
+        contentType: avatarBlob.type || 'image/jpeg',
+        cacheControl: 'public,max-age=31536000',
+      })
+      const storedUrl = await getDownloadURL(objectRef)
+
+      await updateProfile(firebaseUser, { photoURL: storedUrl })
+      await setDoc(
+        doc(db, 'users', firebaseUser.uid),
+        { profileImageUrl: storedUrl, profileImagePath: objectPath, updatedAt: serverTimestamp() },
+        { merge: true }
+      )
+      return storedUrl
+    } catch (e) {
+      console.warn('Failed to mirror auth avatar to Storage:', e)
       return null
     }
   }
@@ -616,13 +680,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const userData = await fetchUserData(firebaseUser.uid)
         setUser(userData)
 
+        // Ensure provider avatars are copied into our own Storage path once,
+        // so sidebar/profile can use a durable URL we control.
+        const mirroredAvatarUrl = await mirrorAuthAvatarToStorage(firebaseUser, userData)
+
         // Keep Firestore user doc in sync with Auth profile (email/photo).
         // This helps after secure email changes (verify-before-update) complete.
         try {
           const updates: Record<string, any> = {}
+          const effectivePhotoUrl = mirroredAvatarUrl || firebaseUser.photoURL
           if (firebaseUser.email && userData?.email !== firebaseUser.email) updates.email = firebaseUser.email
-          if (firebaseUser.photoURL && (userData as any)?.profileImageUrl !== firebaseUser.photoURL) {
-            updates.profileImageUrl = firebaseUser.photoURL
+          if (effectivePhotoUrl && (userData as any)?.profileImageUrl !== effectivePhotoUrl) {
+            updates.profileImageUrl = effectivePhotoUrl
           }
           if (Object.keys(updates).length > 0) {
             await setDoc(doc(db, 'users', firebaseUser.uid), { ...updates, updatedAt: serverTimestamp() }, { merge: true })

@@ -14,6 +14,13 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'glenn@aicoder.guru' ||
+        request.auth.token.email == 'glenn@fueld.ai'
+      );
+    }
+
     function isOrgMember(orgId) {
       return isAuthenticated() &&
         exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
@@ -124,6 +131,13 @@ service cloud.firestore {
     // Written by Cloud Functions (Admin SDK bypasses rules). Allow reads for authenticated users for now.
     match /pricingCatalog/{docId}/{document=**} {
       allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ===== MODEL MAPPINGS =====
+    // Written by Cloud Functions; read-only and super-admin visible in app admin panel.
+    match /modelMappings/{mappingId} {
+      allow read: if isSuperAdmin();
       allow write: if false;
     }
     

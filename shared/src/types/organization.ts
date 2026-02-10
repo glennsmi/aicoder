@@ -43,12 +43,24 @@ export interface OrganizationReportSettings {
   whiteLabelBranding?: boolean;
 }
 
+export interface OrganizationBrandingSettings {
+  /**
+   * Public download URL for an uploaded organization logo.
+   */
+  logoUrl?: string | null;
+  /**
+   * Storage object path for cleanup/maintenance.
+   */
+  logoPath?: string | null;
+}
+
 export interface OrganizationSettings {
   apiIntegrations: string[]; // List of enabled integration provider IDs
   dataRetentionDays: number; // Number of days to retain usage data
   allowMemberInvites?: boolean; // Whether members can invite others
   requireTwoFactor?: boolean; // Whether 2FA is required
   reports?: OrganizationReportSettings;
+  branding?: OrganizationBrandingSettings;
 }
 
 /**
@@ -99,6 +111,10 @@ export const OrganizationSettingsSchema = z.object({
   requireTwoFactor: z.boolean().optional(),
   reports: z.object({
     whiteLabelBranding: z.boolean().optional(),
+  }).optional(),
+  branding: z.object({
+    logoUrl: z.string().url().nullable().optional(),
+    logoPath: z.string().nullable().optional(),
   }).optional(),
 });
 

@@ -17,6 +17,23 @@ import { httpsCallable } from 'firebase/functions'
 import { functions } from '@/config/firebaseApp'
 import { getUserAnySavedUsageV2 } from '@/lib/usageEvents'
 
+const usageRowMergeKey = (row: CursorUsageV2): string => {
+  const tb = row.tokenBreakdown
+  return [
+    String(row.timestamp),
+    String(row.model || ''),
+    String(row.expandedModelName || ''),
+    String(row.source || ''),
+    String(row.tokens || 0),
+    String(row.costUsd ?? ''),
+    String(tb?.inputWithCacheWrite ?? ''),
+    String(tb?.inputWithoutCacheWrite ?? ''),
+    String(tb?.cacheRead ?? ''),
+    String(tb?.output ?? ''),
+    String(tb?.total ?? ''),
+  ].join('|')
+}
+
 
 export default function CursorCostsPage() {
   // const navigate = useNavigate() // Commented out - not currently used
@@ -30,22 +47,82 @@ export default function CursorCostsPage() {
   } = useUserUsageData()
   const {  userCurrency, loading: currencyLoading } = useCurrency()
   
+  type MappingImportDiagnostics = {
+    source: string
+    rowsEvaluated: number
+    matchedRows: number
+    unmatchedRows: number
+    matchTypeCounts: Record<string, number>
+    unmatchedModels: Array<{
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>
+  }
+
+  type SaveResultState = {
+    saved: number
+    duplicates: number
+    errors: string[]
+    mappingDiagnostics?: MappingImportDiagnostics
+  }
+
+  const mergeMappingDiagnostics = (
+    base: MappingImportDiagnostics,
+    next: MappingImportDiagnostics
+  ): MappingImportDiagnostics => {
+    const mergedCounts: Record<string, number> = { ...base.matchTypeCounts }
+    Object.entries(next.matchTypeCounts || {}).forEach(([k, v]) => {
+      mergedCounts[k] = (mergedCounts[k] || 0) + Number(v || 0)
+    })
+
+    const unmatchedMap = new Map<string, {
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>()
+    for (const item of [...(base.unmatchedModels || []), ...(next.unmatchedModels || [])]) {
+      const key = `${item.source}|${item.rawModelName}|${item.canonicalSuggestion}`
+      const prev = unmatchedMap.get(key)
+      if (prev) {
+        prev.occurrences += Number(item.occurrences || 0)
+      } else {
+        unmatchedMap.set(key, {
+          ...item,
+          occurrences: Number(item.occurrences || 0),
+        })
+      }
+    }
+
+    return {
+      source: base.source || next.source,
+      rowsEvaluated: Number(base.rowsEvaluated || 0) + Number(next.rowsEvaluated || 0),
+      matchedRows: Number(base.matchedRows || 0) + Number(next.matchedRows || 0),
+      unmatchedRows: Number(base.unmatchedRows || 0) + Number(next.unmatchedRows || 0),
+      matchTypeCounts: mergedCounts,
+      unmatchedModels: Array.from(unmatchedMap.values())
+        .sort((a, b) => b.occurrences - a.occurrences || a.rawModelName.localeCompare(b.rawModelName))
+        .slice(0, 25),
+    }
+  }
+
   // Debug currency state
   console.log('🎯 CursorCostsPage - userCurrency:', userCurrency, 'loading:', currencyLoading, 'currentUser:', !!currentUser)
   
   // const [tempData, setTempData] = useState<CursorUsage[]>([])
   const [pasteError, setPasteError] = useState<string | null>(null)
   const [isPasting] = useState(false)
-  const [saveResult, setSaveResult] = useState<{
-    saved: number
-    duplicates: number
-    errors: string[]
-  } | null>(null)
+  const [saveResult, setSaveResult] = useState<SaveResultState | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode] = useState<'login' | 'signup'>('login')
   const [showCurrencySelector, setShowCurrencySelector] = useState(false)
   const [currentPage, setCurrentPage] = useState<'main' | 'admin'>('main')
   const [showAboutModal, setShowAboutModal] = useState(false)
+  const isSuperAdmin = Boolean(
+    currentUser?.email && ['glenn@aicoder.guru', 'glenn@fueld.ai'].includes(currentUser.email)
+  )
 
   const [tempDataV2, setTempDataV2] = useState<CursorUsageV2[]>([])
   const [isSavingUsageEvents, setIsSavingUsageEvents] = useState(false)
@@ -133,12 +210,12 @@ const handleTokensImport = async (
 
     const existing = new Map<string, CursorUsageV2>()
     for (const r of prev) {
-      const key = `${r.timestamp}-${r.model}-${r.tokens}`
+      const key = usageRowMergeKey(r)
       existing.set(key, r)
     }
     // New rows overwrite existing duplicates (fresher parse)
     for (const r of rows) {
-      const key = `${r.timestamp}-${r.model}-${r.tokens}`
+      const key = usageRowMergeKey(r)
       existing.set(key, r)
     }
     const merged = Array.from(existing.values())
@@ -162,6 +239,7 @@ const handleTokensImport = async (
       let saved = 0
       let duplicates = 0
       const errors: string[] = []
+      let mappingDiagnostics: MappingImportDiagnostics | null = null
 
       // Run the save in the background; do not block the UI thread.
       void (async () => {
@@ -189,10 +267,16 @@ const handleTokensImport = async (
               const data = result.data as any
               saved += Number(data?.saved || 0)
               duplicates += Number(data?.duplicates || 0)
+              if (data?.mappingDiagnostics) {
+                const incoming = data.mappingDiagnostics as MappingImportDiagnostics
+                mappingDiagnostics = mappingDiagnostics
+                  ? mergeMappingDiagnostics(mappingDiagnostics, incoming)
+                  : incoming
+              }
             }
           }
 
-          setSaveResult({ saved, duplicates, errors })
+          setSaveResult({ saved, duplicates, errors, ...(mappingDiagnostics ? { mappingDiagnostics } : {}) })
           // Refresh the UI from Firestore so we are charting persisted stitched data.
           await loadSavedEvents()
         } catch (e: any) {
@@ -228,11 +312,11 @@ const handleTokensImport = async (
 
       const existing = new Map<string, CursorUsageV2>()
       for (const r of prev) {
-        const key = `${r.timestamp}-${r.model}-${r.tokens}`
+        const key = usageRowMergeKey(r)
         existing.set(key, r)
       }
       for (const r of rows) {
-        const key = `${r.timestamp}-${r.model}-${r.tokens}`
+        const key = usageRowMergeKey(r)
         existing.set(key, r)
       }
       const merged = Array.from(existing.values())
@@ -255,6 +339,7 @@ const handleTokensImport = async (
       let saved = 0
       let duplicates = 0
       const errors: string[] = []
+      let mappingDiagnostics: MappingImportDiagnostics | null = null
 
       void (async () => {
         try {
@@ -278,10 +363,16 @@ const handleTokensImport = async (
               const data = result.data as any
               saved += Number(data?.saved || 0)
               duplicates += Number(data?.duplicates || 0)
+              if (data?.mappingDiagnostics) {
+                const incoming = data.mappingDiagnostics as MappingImportDiagnostics
+                mappingDiagnostics = mappingDiagnostics
+                  ? mergeMappingDiagnostics(mappingDiagnostics, incoming)
+                  : incoming
+              }
             }
           }
 
-          setSaveResult({ saved, duplicates, errors })
+          setSaveResult({ saved, duplicates, errors, ...(mappingDiagnostics ? { mappingDiagnostics } : {}) })
           await loadSavedEvents()
         } catch (e: any) {
           console.error('Failed to ingest ccusage daily usage events:', e)
@@ -478,10 +569,33 @@ const handleTokensImport = async (
                     {saveResult.errors.length} errors occurred
                   </p>
                 )}
+                {saveResult.mappingDiagnostics && (
+                  <p className="text-green-700 dark:text-green-300 text-sm mt-1">
+                    Mapping diagnostics: {saveResult.mappingDiagnostics.matchedRows.toLocaleString()} seed matches,{' '}
+                    {saveResult.mappingDiagnostics.unmatchedRows.toLocaleString()} heuristic matches.
+                  </p>
+                )}
                 {currentUser && (
                   <p className="text-green-600 dark:text-green-400 text-sm mt-1">
                     💾 Raw data preserved • 📊 Auto-aggregated by minute for analytics
                   </p>
+                )}
+                {isSuperAdmin && saveResult.mappingDiagnostics && saveResult.mappingDiagnostics.unmatchedModels.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3">
+                    <p className="text-amber-800 dark:text-amber-200 text-sm font-medium">
+                      Unmatched model aliases detected (top {Math.min(8, saveResult.mappingDiagnostics.unmatchedModels.length)}):
+                    </p>
+                    <div className="mt-1 space-y-1">
+                      {saveResult.mappingDiagnostics.unmatchedModels.slice(0, 8).map((item) => (
+                        <p key={`${item.source}|${item.rawModelName}|${item.canonicalSuggestion}`} className="text-amber-700 dark:text-amber-300 text-xs">
+                          {item.source}: `{item.rawModelName}` → `{item.canonicalSuggestion}` ({item.occurrences})
+                        </p>
+                      ))}
+                    </div>
+                    <p className="text-amber-700 dark:text-amber-300 text-xs mt-2">
+                      Super-admin alert email sent automatically for this import.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>

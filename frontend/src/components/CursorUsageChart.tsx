@@ -60,6 +60,28 @@ interface ChartData {
 
 type TimePeriod = 'last7d' | 'last14d' | 'last30d' | 'last3m' | 'custom'
 type PresetTimePeriod = Exclude<TimePeriod, 'custom'>
+type GroupByMode = 'model' | 'expandedModel' | 'source'
+
+const FRIENDLY_SOURCE_LABELS: Record<string, string> = {
+  cursor_csv: 'Cursor CSV Upload',
+  ccusage_daily_json: 'Claude Code Usage',
+  claude_code_usage: 'Claude Code Usage',
+  anthropic_usage_api: 'Anthropic Usage API',
+  anthropic_code_api: 'Anthropic Code API',
+  openai_api: 'OpenAI API',
+  github_copilot_api: 'GitHub Copilot API',
+  gemini_api: 'Gemini API',
+  codeium_api: 'Codeium API',
+}
+
+function toFriendlySourceLabel(raw: string): string {
+  const key = String(raw || '').trim().toLowerCase()
+  if (!key) return 'Unknown Source'
+  if (FRIENDLY_SOURCE_LABELS[key]) return FRIENDLY_SOURCE_LABELS[key]
+  return key
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
 
 type HoverPopoverProps = {
   trigger: React.ReactNode
@@ -148,6 +170,7 @@ export default function CursorUsageChart({
   // Smallest supported unit is hourly. Daily is derived from hourly.
   const [aggregationMode, setAggregationMode] = useState<'day' | 'hour'>('hour')
   const [metricMode, setMetricMode] = useState<'tokens' | 'costs'>('tokens')
+  const [groupByMode, setGroupByMode] = useState<GroupByMode>('model')
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('last7d')
   const [presetAnchorMs, setPresetAnchorMs] = useState<number | null>(null) // end of window for 1D/2D/1W/1M
   const [customStartDate, setCustomStartDate] = useState<string>('')
@@ -174,12 +197,38 @@ export default function CursorUsageChart({
   const [selectedModelForChart, setSelectedModelForChart] = useState<string | null>(null)
   const [isHighlightPending, startHighlightTransition] = useTransition()
   const [referenceModel, setReferenceModel] = useState<string | null>(null)
+  const displayGroupName = useCallback(
+    (name: string) => (groupByMode === 'source' ? toFriendlySourceLabel(name) : name),
+    [groupByMode]
+  )
 
   const useWhiteLabelBranding = Boolean(organization?.settings?.reports?.whiteLabelBranding)
   const orgDisplayName = (organization?.name || '').trim()
 
   // Crossfilter-inspired: shrink working set early (hour buckets by model).
-  const hourlyData = useMemo(() => aggregateCursorUsageV2ToHourlyByModel(data), [data])
+  const hourlyData = useMemo(
+    () =>
+      aggregateCursorUsageV2ToHourlyByModel(data, {
+        groupBy: groupByMode,
+      }),
+    [data, groupByMode]
+  )
+
+  const resolveGroupName = useCallback(
+    (usage: CursorUsage): string => {
+      if (groupByMode === 'expandedModel') {
+        const rawExpandedModelName = Array.isArray((usage.raw as any)?.expandedModelNames)
+          ? String(((usage.raw as any).expandedModelNames as unknown[]).find((v) => String(v || '').trim()) || '').trim()
+          : ''
+        return String(usage.expandedModelName || rawExpandedModelName || usage.model || '').trim()
+      }
+      if (groupByMode === 'source') {
+        return String(usage.source || usage.model || '').trim()
+      }
+      return String(usage.model || '').trim()
+    },
+    [groupByMode]
+  )
 
   type ModelBreakdownSortKey =
     | 'model'
@@ -594,7 +643,8 @@ export default function CursorUsageChart({
       if (!acc[key]) {
         acc[key] = { models: {}, modelInput: {}, modelOutput: {}, sumTokens: 0, sumCost: 0, fullDate }
       }
-      const modelName = usage.model
+      const modelName = resolveGroupName(usage)
+      if (!modelName) return acc
       const modelKey = modelKeyByName.get(modelName) ?? modelName
 
       if (!acc[key].models[modelKey]) {
@@ -689,14 +739,15 @@ export default function CursorUsageChart({
 
   // Get all unique models from the dataset (stable ordering).
   const allModels = useMemo(
-    () => Array.from(new Set(hourlyData.map((usage) => usage.model))).filter(Boolean).sort(),
-    [hourlyData]
+    () => Array.from(new Set(hourlyData.map((usage) => resolveGroupName(usage)))).filter(Boolean).sort(),
+    [hourlyData, resolveGroupName]
   )
 
   // Recharts treats `dataKey` as a path (dots are separators), so model names like "claude-3.5"
   // can break rendering. Use safe, deterministic keys and map back to display names.
   type ModelDef = {
     name: string
+    displayName: string
     key: string
     baseColor: string
     inputColor: string
@@ -731,17 +782,18 @@ export default function CursorUsageChart({
       const rgb = hexToRgb(baseColor)
       const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`
       const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)`
+      const displayName = groupByMode === 'source' ? toFriendlySourceLabel(name) : name
 
       // Deterministic, safe key
       let key = `m_${hashString32(name).toString(36)}`
       while (used.has(key)) key = `${key}_x`
       used.add(key)
 
-      out.push({ name, key, baseColor, inputColor, outputColor })
+      out.push({ name, displayName, key, baseColor, inputColor, outputColor })
     }
 
     return out
-  }, [allModels])
+  }, [allModels, groupByMode])
 
   const modelKeyByName = useMemo(() => {
     const m = new Map<string, string>()
@@ -751,7 +803,7 @@ export default function CursorUsageChart({
 
   const modelNameByKey = useMemo(() => {
     const m = new Map<string, string>()
-    for (const d of modelDefs) m.set(d.key, d.name)
+    for (const d of modelDefs) m.set(d.key, d.displayName)
     return m
   }, [modelDefs])
 
@@ -773,7 +825,7 @@ export default function CursorUsageChart({
 
   const chartData = useMemo(
     () => processData(filteredData),
-    [filteredData, aggregationMode, metricMode, modelKeyByName, modelDefs, zoomRange]
+    [filteredData, aggregationMode, metricMode, modelKeyByName, modelDefs, zoomRange, resolveGroupName]
   )
 
   const hasDataInWindow = chartData.length > 0
@@ -857,6 +909,7 @@ export default function CursorUsageChart({
   type ModelBreakdownRow = {
     model: string
     modelIndex: number
+    expandedModelTokenRows: Array<{ model: string; tokens: number }>
     inputTokens: number
     inputWithCacheWriteTokens: number
     inputWithoutCacheWriteTokens: number
@@ -882,12 +935,13 @@ export default function CursorUsageChart({
     const byModel = new Map<string, Omit<ModelBreakdownRow, 'costPerMillionInputTokensUsd' | 'costPerMillionOutputTokensUsd' | 'costUserCurrency'>>()
 
     for (const usage of filteredData) {
-      const model = usage.model
+      const model = resolveGroupName(usage)
       if (!model) continue
 
       const prev = byModel.get(model) ?? {
         model,
         modelIndex: allModels.indexOf(model),
+        expandedModelTokenRows: [],
         inputTokens: 0,
         inputWithCacheWriteTokens: 0,
         inputWithoutCacheWriteTokens: 0,
@@ -896,6 +950,28 @@ export default function CursorUsageChart({
         totalTokens: 0,
         costUsd: 0,
       }
+
+      const expandedTotals = new Map<string, number>(
+        prev.expandedModelTokenRows.map((r) => [r.model, r.tokens])
+      )
+      const rawExpandedTotals = (usage.raw as any)?.expandedModelTokenTotals
+      if (rawExpandedTotals && typeof rawExpandedTotals === 'object') {
+        for (const [expandedModel, tokenValue] of Object.entries(rawExpandedTotals as Record<string, unknown>)) {
+          const name = String(expandedModel || '').trim()
+          if (!name) continue
+          const amount = Number(tokenValue) || 0
+          if (amount <= 0) continue
+          expandedTotals.set(name, (expandedTotals.get(name) || 0) + amount)
+        }
+      } else {
+        const fallbackExpanded = String(usage.expandedModelName || model).trim()
+        if (fallbackExpanded) {
+          expandedTotals.set(fallbackExpanded, (expandedTotals.get(fallbackExpanded) || 0) + (usage.tokens || 0))
+        }
+      }
+      prev.expandedModelTokenRows = Array.from(expandedTotals.entries())
+        .map(([name, tokens]) => ({ model: name, tokens }))
+        .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
 
       prev.totalTokens += usage.tokens || 0
       prev.costUsd += usage.costUsd || 0
@@ -934,7 +1010,7 @@ export default function CursorUsageChart({
     }
 
     return rows
-  }, [filteredData, allModels, convertFromUSD])
+  }, [filteredData, allModels, convertFromUSD, resolveGroupName])
 
   const sortedModelBreakdownRows = useMemo(() => {
     const dir = modelBreakdownSortDir === 'asc' ? 1 : -1
@@ -977,6 +1053,13 @@ export default function CursorUsageChart({
       setReferenceModel(null)
     }
   }, [compareModelOptions, referenceModel])
+
+  useEffect(() => {
+    if (selectedModel && !allModels.includes(selectedModel)) {
+      setSelectedModel(null)
+      setSelectedModelForChart(null)
+    }
+  }, [allModels, selectedModel])
 
   const referenceCostPerMillionInputUsd = useMemo(() => {
     if (!referenceModel) return null
@@ -1338,7 +1421,7 @@ export default function CursorUsageChart({
         {/* Left section for title */}
         <div className="flex-grow mr-4">
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white transition-colors duration-200">
-            {aggregationMode === 'day' ? 'Daily' : 'Hourly'} tokens by model
+            {aggregationMode === 'day' ? 'Daily' : 'Hourly'} tokens by {groupByMode === 'model' ? 'model' : groupByMode === 'expandedModel' ? 'expanded model' : 'source'}
           </h3>
         </div>
 
@@ -1615,7 +1698,7 @@ export default function CursorUsageChart({
                         dataKey={`${d.key}_input`}
                         stackId="usage"
                         fill={d.inputColor}
-                        name={`${d.name} (Input)`}
+                        name={`${d.displayName} (Input)`}
                         opacity={isDimmed ? 0.3 : 1}
                         isAnimationActive={true}
                         animationDuration={600}
@@ -1631,7 +1714,7 @@ export default function CursorUsageChart({
                         dataKey={`${d.key}_output`}
                         stackId="usage"
                         fill={d.outputColor}
-                        name={`${d.name} (Output)`}
+                        name={`${d.displayName} (Output)`}
                         opacity={isDimmed ? 0.3 : 1}
                         isAnimationActive={true}
                         animationDuration={600}
@@ -1656,7 +1739,7 @@ export default function CursorUsageChart({
                       dataKey={d.key}
                       stackId="usage"
                       fill={d.baseColor}
-                      name={d.name}
+                      name={d.displayName}
                       opacity={isDimmed ? 0.3 : 0.8}
                       isAnimationActive={true}
                       animationDuration={600}
@@ -1729,7 +1812,7 @@ export default function CursorUsageChart({
                 {selectedModel ? (
                   <>
                     <span className="text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                      {selectedModel}:
+                      {displayGroupName(selectedModel)}:
                     </span>
                     {(() => {
                       const baseColor = getModelBaseColor(selectedModel)
@@ -1812,9 +1895,25 @@ export default function CursorUsageChart({
         {/* Tabular Legend - Model Breakdown Table */}
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4 transition-colors duration-200">
           <div className="flex items-center justify-between mb-3 min-h-[28px]">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Model Breakdown ({timePeriod === 'custom' ? 'Custom Range' : timePeriod})</h4>
+            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+              Breakdown by {groupByMode === 'model' ? 'Model' : groupByMode === 'expandedModel' ? 'Expanded model' : 'Source'} ({timePeriod === 'custom' ? 'Custom Range' : timePeriod})
+            </h4>
             
             <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Group by:</span>
+                <select
+                  value={groupByMode}
+                  onChange={(e) => setGroupByMode(e.target.value as GroupByMode)}
+                  className="h-7 text-xs rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 px-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  title="Choose how chart and table are grouped"
+                >
+                  <option value="model">Model</option>
+                  <option value="expandedModel">Expanded model</option>
+                  <option value="source">Source</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Price compare to:</span>
                 <select
@@ -1826,7 +1925,7 @@ export default function CursorUsageChart({
                   <option value="">None</option>
                   {compareModelOptions.map((m) => (
                     <option key={m} value={m}>
-                      {m}
+                      {displayGroupName(m)}
                     </option>
                   ))}
                 </select>
@@ -1863,7 +1962,7 @@ export default function CursorUsageChart({
                       className="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white"
                       title="Sort by model"
                     >
-                      <span>Model</span>
+                      <span>{groupByMode === 'source' ? 'Source' : groupByMode === 'expandedModel' ? 'Expanded Model' : 'Model'}</span>
                       <span className="text-[10px] opacity-70">
                         {modelBreakdownSortKey === 'model' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
                       </span>
@@ -2018,6 +2117,8 @@ export default function CursorUsageChart({
                 {sortedModelBreakdownRows.map((row, idx) => {
                     const model = row.model
                     const isSplitUnknown = isSplitUnknownModelName(model)
+                    const expandedBreakdown = row.expandedModelTokenRows
+                    const hasExpandedVariants = expandedBreakdown.length > 1
                     
                     return (
                       <tr 
@@ -2044,7 +2145,7 @@ export default function CursorUsageChart({
                           <span 
                             className="inline-block w-4 h-4 rounded-full"
                             style={{ backgroundColor: getModelBaseColor(model) }}
-                            title={`${model} model color`}
+                            title={`${displayGroupName(model)} model color`}
                           ></span>
                         </td>
                         <td className={cn(
@@ -2052,9 +2153,63 @@ export default function CursorUsageChart({
                           selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
                         )}>
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="min-w-0 flex-1 truncate whitespace-nowrap" title={model}>
-                              {model}
+                            <span className="min-w-0 flex-1 truncate whitespace-nowrap" title={displayGroupName(model)}>
+                              {displayGroupName(model)}
                             </span>
+                            <HoverPopover
+                              trigger={(
+                                <span className="inline-flex items-center justify-center w-4 h-4 shrink-0 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </span>
+                              )}
+                              side="top"
+                              align="start"
+                              contentClassName="bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-[32rem] max-w-[90vw]"
+                            >
+                              <div className="font-semibold mb-2 text-primary-300">
+                                {groupByMode === 'source' ? 'Source Breakdown' : 'Expanded Model Breakdown'}
+                              </div>
+                              <div className="mb-2 text-gray-200 break-words">
+                                <span className="font-medium">
+                                  {groupByMode === 'source' ? 'Source:' : 'Base model:'}
+                                </span>{' '}
+                                {displayGroupName(model)}
+                              </div>
+                              <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                                {expandedBreakdown.length === 0 && (
+                                  <div className="text-gray-300">No expanded model metadata available.</div>
+                                )}
+                                {expandedBreakdown.length === 1 && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-gray-200 break-all pr-3">
+                                      {groupByMode === 'source' ? displayGroupName(expandedBreakdown[0]!.model) : expandedBreakdown[0]!.model}
+                                    </span>
+                                    <span className="font-semibold text-gray-100 whitespace-nowrap">{row.totalTokens.toLocaleString('en-US')}</span>
+                                  </div>
+                                )}
+                                {expandedBreakdown.length > 1 && expandedBreakdown.map((variant) => (
+                                  <div key={`${model}-${variant.model}`} className="flex justify-between gap-3">
+                                    <span className="text-gray-200 break-all">
+                                      {groupByMode === 'source' ? displayGroupName(variant.model) : variant.model}
+                                    </span>
+                                    <span className="font-medium text-gray-100 whitespace-nowrap">
+                                      {variant.tokens.toLocaleString('en-US')}
+                                      {percentOfTotal(variant.tokens, row.totalTokens) && (
+                                        <span className="ml-1 text-[10px] text-gray-400">
+                                          ({percentOfTotal(variant.tokens, row.totalTokens)})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="mt-2 pt-2 border-t border-gray-700 flex justify-between">
+                                <span className="text-gray-300">{hasExpandedVariants ? 'Combined total:' : 'Total tokens:'}</span>
+                                <span className="font-bold">{row.totalTokens.toLocaleString('en-US')}</span>
+                              </div>
+                            </HoverPopover>
                             {/* Reserve space so spinner never changes row height/wrapping */}
                             <span
                               className={cn(

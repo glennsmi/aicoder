@@ -7,7 +7,7 @@ import { useOrgInvitations } from '../hooks/useOrgInvitations'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function UserManagementTable() {
-  const { organization, members, teams, canManageUsers } = useOrganization()
+  const { organization, members, teams, canManageUsers, currentRole } = useOrganization()
   const { user } = useAuth()
   const organizationId = organization?.id || null
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -28,6 +28,7 @@ export default function UserManagementTable() {
   const [memberToRemove, setMemberToRemove] = useState<OrganizationMember | null>(null)
 
   const canManage = canManageUsers()
+  const isAdminViewer = currentRole === 'admin'
 
   const {
     invitations: pendingInvites,
@@ -324,6 +325,8 @@ export default function UserManagementTable() {
                 filteredMembers.map((member) => {
                   const memberTeam = teams.find((t) => t.id === member.teamId)
                   const isSelf = Boolean(user?.id && user.id === member.userId)
+                  const isOwner = Boolean(organization?.ownerId && organization.ownerId === member.userId)
+                  const canRemoveMember = isAdminViewer && !isSelf && !isOwner
                   
                   return (
                     <tr key={member.userId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
@@ -402,19 +405,27 @@ export default function UserManagementTable() {
                               >
                                 Edit name
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (isSelf) return
-                                  setActionsOpenForUserId(null)
-                                  openRemoveMemberModal(member)
-                                }}
-                                disabled={isSelf}
-                                className="w-full px-4 py-2.5 text-left text-sm text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={isSelf ? 'You cannot remove yourself' : undefined}
-                              >
-                                Remove user
-                              </button>
+                              {isAdminViewer && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!canRemoveMember) return
+                                    setActionsOpenForUserId(null)
+                                    openRemoveMemberModal(member)
+                                  }}
+                                  disabled={!canRemoveMember}
+                                  className="w-full px-4 py-2.5 text-left text-sm text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title={
+                                    isSelf
+                                      ? 'You cannot remove yourself'
+                                      : isOwner
+                                      ? 'You cannot remove the organization owner'
+                                      : undefined
+                                  }
+                                >
+                                  Remove user
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>

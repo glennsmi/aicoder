@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '../config/firebaseApp'
+import { collection, doc, getDocs, query as fsQuery, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
+import { db, storage } from '../config/firebaseApp'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useAuth } from '../contexts/AuthContext'
+
+const SUPPORTED_LOGO_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
+const MAX_LOGO_BYTES = 5 * 1024 * 1024
+
+function toMillisSafe(value: any): number {
+  if (!value) return 0
+  if (typeof value?.toMillis === 'function') return value.toMillis()
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
 
 export default function OrganizationSettingsPage() {
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
   const { organization, currentRole, organizationLoading, refreshOrganization } = useOrganization()
 
   const canEdit = currentRole === 'admin'
@@ -25,10 +38,22 @@ export default function OrganizationSettingsPage() {
   const [requireTwoFactor, setRequireTwoFactor] = useState(initial.requireTwoFactor)
   const [dataRetentionDays, setDataRetentionDays] = useState<number>(initial.dataRetentionDays)
   const [whiteLabelBranding, setWhiteLabelBranding] = useState<boolean>(initial.whiteLabelBranding)
+  const [selectedLogo, setSelectedLogo] = useState<File | null>(null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [subscriptionInternalTier, setSubscriptionInternalTier] = useState<string | null>(null)
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const hasSenseiPlusSubscription = subscriptionInternalTier === 'team_sensei'
+    || subscriptionInternalTier === 'team_master'
+    || subscriptionInternalTier === 'enterprise'
+  const hasSenseiPlusRetentionFallback = Number(organization?.settings?.dataRetentionDays || 0) >= 180
+  const hasSenseiPlusFeature = Boolean(hasSenseiPlusSubscription || hasSenseiPlusRetentionFallback || organization?.tier === 'enterprise')
+  const currentLogoUrl = typeof organization?.settings?.branding?.logoUrl === 'string'
+    ? organization.settings.branding.logoUrl
+    : null
 
   useEffect(() => {
     setName(initial.name)
@@ -37,6 +62,129 @@ export default function OrganizationSettingsPage() {
     setDataRetentionDays(initial.dataRetentionDays)
     setWhiteLabelBranding(initial.whiteLabelBranding)
   }, [initial])
+
+  useEffect(() => {
+    if (!organization?.id) {
+      setSubscriptionInternalTier(null)
+      return
+    }
+
+    const run = async () => {
+      try {
+        const subscriptionsRef = collection(db, 'subscriptions')
+        const subQuery = fsQuery(subscriptionsRef, where('organizationId', '==', organization.id))
+        const snapshot = await getDocs(subQuery)
+        const activeStatuses = new Set(['active', 'trialing', 'past_due'])
+        const docs = snapshot.docs
+          .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+          .filter((sub: any) => activeStatuses.has(String(sub.status || '')))
+          .sort((a: any, b: any) => {
+            const aTs = toMillisSafe(a.updatedAt) || toMillisSafe(a.currentPeriodEnd)
+            const bTs = toMillisSafe(b.updatedAt) || toMillisSafe(b.currentPeriodEnd)
+            return bTs - aTs
+          })
+
+        if (docs.length > 0) {
+          const current = docs[0] as any
+          setSubscriptionInternalTier(String(current.internalTier || current.tier || ''))
+        } else {
+          setSubscriptionInternalTier(null)
+        }
+      } catch (subscriptionError) {
+        console.warn('Failed to read subscription tier in Organization Settings:', subscriptionError)
+        setSubscriptionInternalTier(null)
+      }
+    }
+
+    run()
+  }, [organization?.id])
+
+  const onUploadLogo = async () => {
+    if (!organization || !currentUser) return
+    if (!canEdit || !hasSenseiPlusFeature) return
+
+    if (!selectedLogo) {
+      setError('Choose a logo image to upload.')
+      setSuccess(null)
+      return
+    }
+
+    if (!(SUPPORTED_LOGO_MIME_TYPES as readonly string[]).includes(selectedLogo.type)) {
+      setError('Unsupported file type. Please use PNG, JPG/JPEG, WebP, or GIF.')
+      setSuccess(null)
+      return
+    }
+
+    if (selectedLogo.size > MAX_LOGO_BYTES) {
+      setError('Image is too large. Please use an image under 5MB.')
+      setSuccess(null)
+      return
+    }
+
+    try {
+      setUploadingLogo(true)
+      setError(null)
+      setSuccess(null)
+
+      const objectPath = `users/${currentUser.uid}/orgLogos/${organization.id}/${Date.now()}_${selectedLogo.name}`
+      const objectRef = ref(storage, objectPath)
+      await uploadBytes(objectRef, selectedLogo, { contentType: selectedLogo.type })
+      const logoUrl = await getDownloadURL(objectRef)
+
+      await updateDoc(doc(db, 'organizations', organization.id), {
+        settings: {
+          ...organization.settings,
+          branding: {
+            ...(organization.settings?.branding || {}),
+            logoUrl,
+            logoPath: objectPath,
+          },
+        },
+        updatedAt: serverTimestamp(),
+      })
+
+      setSelectedLogo(null)
+      await refreshOrganization()
+      setSuccess('Organization logo uploaded.')
+    } catch (e: any) {
+      console.error('Failed to upload organization logo:', e)
+      setError(e?.message || 'Failed to upload logo.')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const onRemoveLogo = async () => {
+    if (!organization) return
+    if (!canEdit || !hasSenseiPlusFeature) return
+
+    try {
+      setUploadingLogo(true)
+      setError(null)
+      setSuccess(null)
+
+      await updateDoc(doc(db, 'organizations', organization.id), {
+        settings: {
+          ...organization.settings,
+          branding: {
+            ...(organization.settings?.branding || {}),
+            logoUrl: null,
+            logoPath: null,
+          },
+        },
+        updatedAt: serverTimestamp(),
+      })
+
+      setSelectedLogo(null)
+      await refreshOrganization()
+      setSuccess('Organization logo removed.')
+    } catch (e: any) {
+      console.error('Failed to remove organization logo:', e)
+      setError(e?.message || 'Failed to remove logo.')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
 
   const onSave = async () => {
     if (!organization) return
@@ -235,6 +383,63 @@ export default function OrganizationSettingsPage() {
               </p>
             </div>
           </label>
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-4">
+          <h2 className="text-lg font-semibold text-gunmetal-900 dark:text-white">
+            Branding
+          </h2>
+
+          {hasSenseiPlusFeature ? (
+            <>
+              <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                Upload your company logo to white-label the top-left app branding for your organization.
+              </p>
+
+              {currentLogoUrl ? (
+                <div className="flex items-center gap-3">
+                  <img
+                    src={currentLogoUrl}
+                    alt={`${organization.name} logo`}
+                    className="h-10 w-auto max-w-[180px] rounded bg-white/80 p-1 border border-gray-200 dark:border-gray-700"
+                  />
+                  <span className="text-xs text-gunmetal-500 dark:text-gray-500">Current logo</span>
+                </div>
+              ) : (
+                <p className="text-xs text-gunmetal-500 dark:text-gray-500">No logo uploaded yet.</p>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="file"
+                  accept={SUPPORTED_LOGO_MIME_TYPES.join(',')}
+                  onChange={(e) => setSelectedLogo(e.target.files?.[0] || null)}
+                  className="flex-1 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-secondary-100 file:text-gunmetal-900 hover:file:bg-secondary-200 dark:file:bg-white/10 dark:file:text-white dark:hover:file:bg-white/15"
+                />
+                <button
+                  onClick={onUploadLogo}
+                  disabled={uploadingLogo}
+                  className="px-4 py-2 rounded-lg bg-primary-500 text-gunmetal-900 font-semibold text-sm hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Upload logo
+                </button>
+                <button
+                  onClick={onRemoveLogo}
+                  disabled={uploadingLogo || !currentLogoUrl}
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gunmetal-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Remove logo
+                </button>
+              </div>
+              <p className="text-xs text-gunmetal-500 dark:text-gray-500">
+                Supported: PNG, JPG/JPEG, WebP, GIF (max 5MB).
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gunmetal-600 dark:text-gray-400">
+              Custom logo upload is available on Sensei, Master, and Grandmaster plans.
+            </p>
+          )}
         </div>
 
         {error && (

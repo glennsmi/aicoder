@@ -15,6 +15,7 @@ export * from './schemas/user';
 
 // Utilities
 export * from './utils/permissions';
+export * from './utils/260210_1550_modelMapping';
 
 // Utilities
 export const createApiResponse = <T>(

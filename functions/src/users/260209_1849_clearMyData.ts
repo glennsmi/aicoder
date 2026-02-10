@@ -69,12 +69,6 @@ export const clearMyData = onCall({ region: 'europe-west2' }, async (request) =>
     )
   }
 
-  // Rate limit (once per hour).
-  const lastClearAtMs = timestampToMs(experimental?.lastClearAt)
-  if (lastClearAtMs && Date.now() - lastClearAtMs < 60 * 60 * 1000) {
-    throw new HttpsError('resource-exhausted', 'You can only clear data once per hour.')
-  }
-
   const deleted: Record<string, number> = {}
   const subcollections = [
     'usageEvents',
@@ -113,7 +107,6 @@ export const clearMyData = onCall({ region: 'europe-west2' }, async (request) =>
     {
       settings: {
         experimental: {
-          lastClearAt: admin.firestore.FieldValue.serverTimestamp(),
           clearDataEnabledAt: admin.firestore.FieldValue.delete(),
         },
       },

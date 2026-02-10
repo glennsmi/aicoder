@@ -211,9 +211,8 @@ export default function DashboardPage() {
     )
   }
 
-  const visibleMembers = selectedTeamId === 'all'
-    ? members
-    : members.filter((m) => m.teamId === selectedTeamId)
+  // Keep user options stable so switching between users is always possible.
+  const visibleMembers = members
 
   return (
     <div className="p-8">

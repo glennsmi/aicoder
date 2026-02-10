@@ -97,6 +97,7 @@ export { updateOrganizationMemberDisplayName, removeOrganizationMember } from '.
 export { testApiConnection, addApiConnection, syncApiConnection, scheduledApiSync } from './api/apiConnections'
 export { ingestUsageEventsFromCursorCsv } from './usage/ingestUsageEventsFromCursorCsv'
 export { ingestUsageEventsFromCcusageDailyJson } from './usage/ingestUsageEventsFromCcusageDailyJson'
+export { syncModelMappings } from './usage/260210_1550_syncModelMappings'
 export { materializeOrgUsageEvents } from './usage/materializeOrgUsageEvents'
 export { refreshPricingCatalog } from './pricing/refreshPricingCatalog'
 export { refreshCurrencyRates, refreshCurrencyRatesManual } from './currency/260205_refreshCurrencyRates'

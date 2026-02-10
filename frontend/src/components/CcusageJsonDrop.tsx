@@ -140,9 +140,11 @@ export default function CcusageJsonDrop({ disabled = false, onImport }: CcusageJ
     <div>
       <div
         className={[
-          'rounded-xl border-2 border-dashed p-6 transition-colors duration-200',
+          'border-2 border-dashed rounded-xl p-6 text-center transition-colors duration-200',
           disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
-          isDragging ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10' : 'border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800',
+          isDragging
+            ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+            : 'border-gray-300',
         ].join(' ')}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -165,7 +167,7 @@ export default function CcusageJsonDrop({ disabled = false, onImport }: CcusageJ
 
         <div className="text-center">
           <div className="text-sm font-semibold text-neutral-900 dark:text-white inline-flex items-center gap-2">
-            <span>Import Claude Code usage (ccusage JSON)</span>
+            <span>Upload Claude Code usage JSON (ccusage daily)</span>
             <span className="relative inline-flex">
               <button
                 type="button"

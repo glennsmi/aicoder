@@ -40,6 +40,10 @@ export interface OrganizationSettings {
   dataRetentionDays: number; // Number of days to retain usage data
   allowMemberInvites?: boolean; // Whether members can invite others
   requireTwoFactor?: boolean; // Whether 2FA is required
+  branding?: {
+    logoUrl?: string | null;
+    logoPath?: string | null;
+  };
 }
 
 /**
@@ -88,6 +92,10 @@ export const OrganizationSettingsSchema = z.object({
   dataRetentionDays: z.number().int().positive(),
   allowMemberInvites: z.boolean().optional(),
   requireTwoFactor: z.boolean().optional(),
+  branding: z.object({
+    logoUrl: z.string().url().nullable().optional(),
+    logoPath: z.string().nullable().optional(),
+  }).optional(),
 });
 
 export const OrganizationSchema = z.object({

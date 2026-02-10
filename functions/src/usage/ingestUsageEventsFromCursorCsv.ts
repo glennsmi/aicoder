@@ -1,7 +1,18 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import * as admin from 'firebase-admin'
 import crypto from 'node:crypto'
-import { CursorUsageV2, TokenBreakdown } from '../shared'
+import {
+  CursorUsageV2,
+  ModelResolutionMatchType,
+  resolveCanonicalModelNameWithDiagnostics,
+  TokenBreakdown,
+  MODEL_MAPPING_VERSION,
+  normalizeModelMappingSourceKey,
+  sourceAliasFieldName,
+  toDisplayModelName,
+  toModelMappingDocId,
+} from '../shared'
+import { sendAdminNotification } from '../utils/email'
 
 type IngestCursorCsvRequest = {
   importId?: string
@@ -17,6 +28,19 @@ type IngestCursorCsvResponse = {
   minEventAtMs?: number
   maxEventAtMs?: number
   models: string[]
+  mappingDiagnostics: {
+    source: string
+    rowsEvaluated: number
+    matchedRows: number
+    unmatchedRows: number
+    matchTypeCounts: Record<ModelResolutionMatchType, number>
+    unmatchedModels: Array<{
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>
+  }
 }
 
 function sha256Base64Url(input: string): string {
@@ -32,6 +56,43 @@ function toDayUtc(eventAtMs: number): string {
 function costUsdToMicros(costUsd: number): number {
   // Avoid floats in storage; rounding is OK for micros.
   return Math.round(costUsd * 1_000_000)
+}
+
+type MappingObservation = {
+  canonicalName: string
+  sourceKey: ReturnType<typeof normalizeModelMappingSourceKey>
+  aliases: Set<string>
+}
+
+async function persistModelMappingObservations(
+  db: FirebaseFirestore.Firestore,
+  observations: Map<string, MappingObservation>
+): Promise<void> {
+  if (observations.size === 0) return
+  const writeBatch = db.batch()
+  for (const observation of observations.values()) {
+    const canonicalName = String(observation.canonicalName || '').trim().toLowerCase()
+    if (!canonicalName) continue
+    const aliases = Array.from(observation.aliases).map((v) => String(v || '').trim().toLowerCase()).filter(Boolean)
+    const docRef = db.collection('modelMappings').doc(toModelMappingDocId(canonicalName))
+    const sourceAliasField = sourceAliasFieldName(observation.sourceKey)
+    const payload: Record<string, unknown> = {
+      canonicalName,
+      displayName: toDisplayModelName(canonicalName),
+      version: MODEL_MAPPING_VERSION,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      allAliases: admin.firestore.FieldValue.arrayUnion(canonicalName, ...aliases),
+      sources: admin.firestore.FieldValue.arrayUnion(observation.sourceKey),
+    }
+    if (sourceAliasField) {
+      payload[`aliasesBySource.${sourceAliasField}`] =
+        aliases.length > 0
+          ? admin.firestore.FieldValue.arrayUnion(...aliases)
+          : admin.firestore.FieldValue.arrayUnion(canonicalName)
+    }
+    writeBatch.set(docRef, payload, { merge: true })
+  }
+  await writeBatch.commit()
 }
 
 function extractTokens(row: CursorUsageV2): {
@@ -74,6 +135,7 @@ function buildFingerprint(input: {
   sourceType: string
   eventAtMs: number
   modelName: string
+  expandedModelName: string
   tokens: ReturnType<typeof extractTokens>
   cost: { hasCost: boolean; amountMicros?: number }
 }): string {
@@ -82,6 +144,7 @@ function buildFingerprint(input: {
     input.sourceType,
     String(input.eventAtMs),
     input.modelName.trim(),
+    input.expandedModelName.trim(),
     String(input.tokens.total),
     String(input.tokens.input ?? ''),
     String(input.tokens.output ?? ''),
@@ -179,6 +242,20 @@ export const ingestUsageEventsFromCursorCsv = onCall(
           saved: 0,
           duplicates: rows.length,
           models: [],
+          mappingDiagnostics: {
+            source: 'cursor_csv',
+            rowsEvaluated: 0,
+            matchedRows: 0,
+            unmatchedRows: 0,
+            matchTypeCounts: {
+              canonical_exact: 0,
+              source_alias: 0,
+              seed_alias_other_source: 0,
+              heuristic: 0,
+              empty: 0,
+            },
+            unmatchedModels: [],
+          },
         }
       }
     }
@@ -212,6 +289,23 @@ export const ingestUsageEventsFromCursorCsv = onCall(
     let minEventAtMs: number | undefined
     let maxEventAtMs: number | undefined
     const models = new Set<string>()
+    const mappingObservations = new Map<string, MappingObservation>()
+    let rowsEvaluated = 0
+    let matchedRows = 0
+    let unmatchedRows = 0
+    const matchTypeCounts: Record<ModelResolutionMatchType, number> = {
+      canonical_exact: 0,
+      source_alias: 0,
+      seed_alias_other_source: 0,
+      heuristic: 0,
+      empty: 0,
+    }
+    const unmatchedModelMap = new Map<string, {
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>()
 
     bulkWriter.onWriteError((err) => {
       // Firestore Admin errors expose status as a number or string depending on environment.
@@ -248,10 +342,44 @@ export const ingestUsageEventsFromCursorCsv = onCall(
         continue
       }
 
-      const modelName = String(row.model || '').trim()
+      const expandedModelName = String(row.expandedModelName || row.model || '').trim()
+      const resolution = resolveCanonicalModelNameWithDiagnostics(
+        row.model || expandedModelName,
+        'cursor_csv'
+      )
+      const modelName = resolution.canonicalName
+      rowsEvaluated += 1
+      matchTypeCounts[resolution.matchType] += 1
+      if (resolution.isSeedMatch) {
+        matchedRows += 1
+      } else if (resolution.matchType !== 'empty') {
+        unmatchedRows += 1
+        const rawModelName = String(row.model || expandedModelName || '').trim()
+        const unmatchedKey = `${rawModelName}|${modelName}`
+        const prev = unmatchedModelMap.get(unmatchedKey)
+        if (prev) {
+          prev.occurrences += 1
+        } else {
+          unmatchedModelMap.set(unmatchedKey, {
+            rawModelName,
+            canonicalSuggestion: modelName,
+            source: 'cursor_csv',
+            occurrences: 1,
+          })
+        }
+      }
       if (!modelName) continue
 
       models.add(modelName)
+      const sourceKey = normalizeModelMappingSourceKey('cursor_csv')
+      const existingObservation = mappingObservations.get(modelName) ?? {
+        canonicalName: modelName,
+        sourceKey,
+        aliases: new Set<string>(),
+      }
+      if (expandedModelName) existingObservation.aliases.add(expandedModelName)
+      if (row.model) existingObservation.aliases.add(String(row.model))
+      mappingObservations.set(modelName, existingObservation)
 
       const tokens = extractTokens(row)
 
@@ -263,6 +391,7 @@ export const ingestUsageEventsFromCursorCsv = onCall(
         sourceType: 'csv',
         eventAtMs,
         modelName,
+        expandedModelName,
         tokens,
         cost: { hasCost: costHasCost, amountMicros: costAmountMicros },
       })
@@ -282,7 +411,10 @@ export const ingestUsageEventsFromCursorCsv = onCall(
         },
         eventAtMs,
         day: toDayUtc(eventAtMs),
-        model: { name: modelName },
+        model: {
+          name: modelName,
+          ...(expandedModelName ? { expandedName: expandedModelName } : {}),
+        },
         tokens,
         cost: {
           hasCost: costHasCost,
@@ -302,7 +434,22 @@ export const ingestUsageEventsFromCursorCsv = onCall(
 
       if (organizationId) doc.organizationId = organizationId
       if (teamId) doc.teamId = teamId
-      if (row.raw && typeof row.raw === 'object') doc.raw = row.raw
+      if (row.raw && typeof row.raw === 'object') {
+        doc.raw = row.raw
+      }
+      if (expandedModelName) {
+        const existingRaw = (doc.raw && typeof doc.raw === 'object') ? (doc.raw as Record<string, unknown>) : {}
+        const mergedExpandedNames = new Set<string>(
+          Array.isArray((existingRaw as any).expandedModelNames)
+            ? ((existingRaw as any).expandedModelNames as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+            : []
+        )
+        mergedExpandedNames.add(expandedModelName)
+        doc.raw = {
+          ...existingRaw,
+          expandedModelNames: Array.from(mergedExpandedNames),
+        }
+      }
 
       bulkWriter.create(docRef, doc)
         .then(() => {
@@ -331,6 +478,48 @@ export const ingestUsageEventsFromCursorCsv = onCall(
     }
 
     await bulkWriter.close()
+    await persistModelMappingObservations(db, mappingObservations)
+
+    const unmatchedModels = Array.from(unmatchedModelMap.values())
+      .sort((a, b) => b.occurrences - a.occurrences || a.rawModelName.localeCompare(b.rawModelName))
+      .slice(0, 25)
+
+    if (unmatchedModels.length > 0) {
+      const diagnosticsPayload = {
+        importId,
+        userId: uid,
+        source: 'cursor_csv',
+        rowsEvaluated,
+        matchedRows,
+        unmatchedRows,
+        matchTypeCounts,
+        topUnmatchedModels: unmatchedModels,
+      }
+
+      let shouldSendAlert = true
+      if (importGuardRef) {
+        try {
+          const guardAlert = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(importGuardRef)
+            const alreadySent = Boolean((snap.exists ? (snap.data() as any) : undefined)?.mappingAlertSent)
+            if (alreadySent) return false
+            tx.set(importGuardRef, { mappingAlertSent: true }, { merge: true })
+            return true
+          })
+          shouldSendAlert = guardAlert
+        } catch (e) {
+          console.error('Failed to set mappingAlertSent guard:', e)
+        }
+      }
+
+      if (shouldSendAlert) {
+        void sendAdminNotification(
+          'Unmatched model aliases detected (Cursor CSV import)',
+          'The import used heuristic model mapping for one or more aliases.',
+          diagnosticsPayload
+        )
+      }
+    }
 
     // Mark import guard complete (best effort)
     if (importGuardRef) {
@@ -342,6 +531,14 @@ export const ingestUsageEventsFromCursorCsv = onCall(
             updatedAtMs: Date.now(),
             saved,
             duplicates,
+            mappingDiagnostics: {
+              source: 'cursor_csv',
+              rowsEvaluated,
+              matchedRows,
+              unmatchedRows,
+              matchTypeCounts,
+              unmatchedModels,
+            },
           },
           { merge: true }
         )
@@ -357,6 +554,14 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       minEventAtMs,
       maxEventAtMs,
       models: Array.from(models).sort(),
+      mappingDiagnostics: {
+        source: 'cursor_csv',
+        rowsEvaluated,
+        matchedRows,
+        unmatchedRows,
+        matchTypeCounts,
+        unmatchedModels,
+      },
     }
   }
 )

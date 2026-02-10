@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/config/firebaseApp'
 import { CursorUsageV2, TokenBreakdown } from '@shared'
+import { normalizeModelMappingSourceKey, resolveCanonicalModelName } from '@shared'
 
 type GetOrgUsageEventsOptions = {
   startMs?: number
@@ -43,14 +44,40 @@ function toMillis(v: unknown): number | null {
   return null
 }
 
+function toSourceLabel(data: any): string {
+  const streamId = String(data?.labels?.streamId || '').trim()
+  const sourceType = String(data?.sourceType || '').trim()
+  const provider = String(data?.provider || '').trim()
+  const raw = streamId || sourceType || provider || 'unknown'
+  return normalizeModelMappingSourceKey(raw)
+}
+
+function firstExpandedModelNameFromRaw(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const names = (raw as any).expandedModelNames
+  if (!Array.isArray(names)) return undefined
+  for (const value of names) {
+    const name = String(value || '').trim()
+    if (name) return name
+  }
+  return undefined
+}
+
 function mapOrgUsageEventDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): OrgUsageRow | null {
   const data: any = d.data()
+  const source = toSourceLabel(data)
 
   const eventAtMs = toMillis(data?.eventAtMs) ?? Number(data?.eventAtMs)
   if (!eventAtMs || !Number.isFinite(eventAtMs) || eventAtMs <= 0) return null
 
-  const modelName = String(data?.model?.name ?? data?.model ?? '').trim()
+  let modelName = String(data?.model?.name ?? data?.model ?? '').trim()
+  let expandedModelName =
+    typeof data?.model?.expandedName === 'string' ? String(data.model.expandedName).trim() : undefined
+  if (!expandedModelName) {
+    expandedModelName = firstExpandedModelNameFromRaw(data?.raw)
+  }
   if (!modelName) return null
+  modelName = resolveCanonicalModelName(modelName, source)
 
   const tokensTotal = Number(data?.tokens?.total ?? 0) || 0
 
@@ -94,6 +121,8 @@ function mapOrgUsageEventDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentDat
     date: new Date(eventAtMs).toISOString(),
     timestamp: eventAtMs,
     model: modelName,
+    expandedModelName,
+    source,
     tokens: tokensTotal,
     tokenBreakdown,
     costUsd: costHasCost && typeof amountMicros === 'number' ? microsToUsd(amountMicros) : undefined,

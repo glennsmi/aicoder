@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/config/firebaseApp'
 import { CursorUsageV2, TokenBreakdown } from '@shared'
+import { normalizeModelMappingSourceKey, resolveCanonicalModelName } from '@shared'
 
 type GetUsageEventsOptions = {
   startMs?: number
@@ -26,6 +27,33 @@ type GetUsageEventsOptions = {
 
 function microsToUsd(micros: number): number {
   return micros / 1_000_000
+}
+
+function usageRowDedupKey(row: CursorUsageV2): string {
+  const tb = row.tokenBreakdown
+  return [
+    String(row.timestamp),
+    String(row.model || ''),
+    String(row.expandedModelName || ''),
+    String(row.source || ''),
+    String(row.tokens || 0),
+    String(row.costUsd ?? ''),
+    String(tb?.inputWithCacheWrite ?? ''),
+    String(tb?.inputWithoutCacheWrite ?? ''),
+    String(tb?.cacheRead ?? ''),
+    String(tb?.output ?? ''),
+    String(tb?.total ?? ''),
+  ].join('|')
+}
+
+function usageRowQualityScore(row: CursorUsageV2): number {
+  let score = 0
+  if (row.expandedModelName) score += 4
+  if (row.tokenBreakdown) score += 3
+  if (row.source) score += 2
+  if (typeof row.costUsd === 'number' && Number.isFinite(row.costUsd)) score += 1
+  if (Array.isArray((row.raw as any)?.expandedModelNames) && (row.raw as any).expandedModelNames.length > 0) score += 1
+  return score
 }
 
 function toMillis(v: unknown): number | null {
@@ -44,6 +72,25 @@ function toMillis(v: unknown): number | null {
 function safeNumber(v: unknown): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
   return Number.isFinite(n) ? n : undefined
+}
+
+function firstExpandedModelNameFromRaw(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const names = (raw as any).expandedModelNames
+  if (!Array.isArray(names)) return undefined
+  for (const value of names) {
+    const name = String(value || '').trim()
+    if (name) return name
+  }
+  return undefined
+}
+
+function toSourceLabel(data: any): string {
+  const streamId = String(data?.labels?.streamId || '').trim()
+  const sourceType = String(data?.sourceType || '').trim()
+  const provider = String(data?.provider || '').trim()
+  const raw = streamId || sourceType || provider || 'unknown'
+  return normalizeModelMappingSourceKey(raw)
 }
 
 export async function getUserCursorUsageEventsV2(
@@ -84,15 +131,26 @@ export async function getUserCursorUsageEventsV2(
   return allDocs.reverse().map((d) => {
     const data: any = d.data()
     const eventAtMs = Number(data.eventAtMs)
-    const modelName = String(data?.model?.name || '')
+    const source = toSourceLabel(data)
+    let modelName = String(data?.model?.name || '')
+    let expandedModelName =
+      typeof data?.model?.expandedName === 'string' ? String(data.model.expandedName).trim() : undefined
+    if (!expandedModelName) {
+      expandedModelName = firstExpandedModelNameFromRaw(data?.raw)
+    }
+    modelName = resolveCanonicalModelName(modelName, source)
     const tokensTotal = Number(data?.tokens?.total || 0)
 
     // Reconstruct Cursor tokenBreakdown if available (so the chart can show input/output/cache details).
     let tokenBreakdown: TokenBreakdown | undefined
     const other = data?.tokens?.other || {}
-    const inputWithCacheWrite = Number(other?.cursorInputWithCacheWrite || 0)
+    const inputWithCacheWrite =
+      Number(data?.tokens?.cacheWrite || 0) ||
+      Number(other?.cursorInputWithCacheWrite || 0) ||
+      Number(other?.ccusageCacheCreationTokens || 0)
     const inputWithoutCacheWrite =
       Number(other?.cursorInputWithoutCacheWrite || 0) ||
+      Number(other?.ccusageInputTokens || 0) ||
       Math.max(0, Number(data?.tokens?.input || 0) - inputWithCacheWrite)
     const cacheRead = Number(data?.tokens?.cacheRead || 0)
     const output = Number(data?.tokens?.output || 0)
@@ -122,6 +180,8 @@ export async function getUserCursorUsageEventsV2(
       date: new Date(eventAtMs).toISOString(),
       timestamp: eventAtMs,
       model: modelName,
+      expandedModelName,
+      source,
       tokens: tokensTotal,
       tokenBreakdown,
       costUsd: hasCost && typeof amountMicros === 'number' ? microsToUsd(amountMicros) : undefined,
@@ -132,6 +192,7 @@ export async function getUserCursorUsageEventsV2(
 
 function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): CursorUsageV2 | null {
   const data: any = d.data()
+  const source = toSourceLabel(data)
 
   const eventAtMs =
     toMillis(data?.eventAtMs) ??
@@ -142,10 +203,21 @@ function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): Curso
 
   if (!eventAtMs || !Number.isFinite(eventAtMs) || eventAtMs <= 0) return null
 
-  const model =
+  let model =
     String(data?.model?.name ?? data?.model ?? data?.modelName ?? '').trim()
+  let expandedModelName =
+    String(
+      data?.model?.expandedName ??
+      data?.expandedModelName ??
+      data?.modelExpandedName ??
+      ''
+    ).trim() || undefined
+  if (!expandedModelName) {
+    expandedModelName = firstExpandedModelNameFromRaw(data?.raw)
+  }
 
   if (!model) return null
+  model = resolveCanonicalModelName(model, source)
 
   // Tokens: support multiple shapes
   const tokensTotal =
@@ -174,9 +246,13 @@ function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): Curso
   } else if (data?.tokens && typeof data.tokens === 'object') {
     const t = data.tokens
     const other = t.other || {}
-    const inputWithCacheWrite = Number(other?.cursorInputWithCacheWrite || 0)
+    const inputWithCacheWrite =
+      Number(t?.cacheWrite || 0) ||
+      Number(other?.cursorInputWithCacheWrite || 0) ||
+      Number(other?.ccusageCacheCreationTokens || 0)
     const inputWithoutCacheWrite =
       Number(other?.cursorInputWithoutCacheWrite || 0) ||
+      Number(other?.ccusageInputTokens || 0) ||
       Math.max(0, Number(t.input || 0) - inputWithCacheWrite)
     const cacheRead = Number(t.cacheRead || 0)
     const output = Number(t.output || 0)
@@ -219,6 +295,8 @@ function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): Curso
     date: typeof data?.date === 'string' ? data.date : new Date(eventAtMs).toISOString(),
     timestamp: eventAtMs,
     model,
+    expandedModelName,
+    source,
     tokens: Number(tokensTotal) || 0,
     tokenBreakdown,
     costUsd: typeof costUsd === 'number' && Number.isFinite(costUsd) ? costUsd : undefined,
@@ -303,16 +381,20 @@ export async function getUserAnySavedUsageV2(
   }
 
   const dedupeAndSort = (rows: CursorUsageV2[]): CursorUsageV2[] => {
-    const seen = new Set<string>()
-    const out: CursorUsageV2[] = []
+    const byKey = new Map<string, CursorUsageV2>()
     for (const r of rows) {
-      // Deduplicate across mixed sources using a stable fingerprint.
-      // (event ids differ by collection; timestamps/models are consistent enough for display.)
-      const key = `${r.timestamp}|${r.model}|${r.tokens}|${r.costUsd ?? ''}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push(r)
+      const key = usageRowDedupKey(r)
+      const existing = byKey.get(key)
+      if (!existing) {
+        byKey.set(key, r)
+        continue
+      }
+      // Keep the richer row when the same event appears across multiple sources.
+      if (usageRowQualityScore(r) > usageRowQualityScore(existing)) {
+        byKey.set(key, r)
+      }
     }
+    const out = Array.from(byKey.values())
     out.sort((a, b) => a.timestamp - b.timestamp)
     return out
   }

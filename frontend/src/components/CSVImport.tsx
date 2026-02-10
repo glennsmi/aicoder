@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
 import CSVDragDrop from './CSVDragDrop'
-import CcusageJsonDrop from './CcusageJsonDrop'
 
 interface CSVImportProps {
   onClear?: () => void
@@ -46,23 +45,16 @@ export default function CSVImport({
 
   return (
     <>
-      {/* Cursor CSV Drag & Drop */}
+      {/* Unified usage-file drag & drop */}
       <div className="mb-6">
         <CSVDragDrop
           disabled={disabled}
-          onImport={(data, summary, fileBatches) => {
-            console.log('📤 CSVImport: CSVDragDrop onImport called with', data.length, 'rows')
+          onCsvImport={(data, summary, fileBatches) => {
+            console.log('📤 CSVImport: CSVDragDrop onCsvImport called with', data.length, 'rows')
             handleTokensImport(data, summary, fileBatches)
           }}
-        />
-      </div>
-
-      {/* Claude Code (ccusage) JSON */}
-      <div className="mb-4">
-        <CcusageJsonDrop
-          disabled={disabled}
-          onImport={(data, summary, fileBatches) => {
-            console.log('📤 CSVImport: CcusageJsonDrop onImport called with', data.length, 'rows')
+          onCcusageImport={(data, summary, fileBatches) => {
+            console.log('📤 CSVImport: CSVDragDrop onCcusageImport called with', data.length, 'rows')
             if (onCcusageDailyImport) {
               onCcusageDailyImport(data, summary, fileBatches)
             }
