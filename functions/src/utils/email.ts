@@ -351,7 +351,7 @@ function getTierBenefitsList(tier: string, planMetadata?: Record<string, unknown
       ...coreLimits,
       'Team analytics and breakdowns',
       'Role-based access control',
-      'Export reports (CSV)'
+      'Export reports (CSV/PDF/Excel)'
     ],
     team_master: [
       ...coreLimits,
