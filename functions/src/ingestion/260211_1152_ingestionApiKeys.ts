@@ -160,14 +160,13 @@ export const listIngestionApiKeys = onCall({ region: 'europe-west2' }, async (re
     const orgSnap = await db
       .collection('ingestionApiKeys')
       .where('mappedOrganizationId', '==', requestedOrganizationId)
-      .orderBy('createdAt', 'desc')
       .limit(200)
       .get()
     snapshots = [orgSnap]
   } else {
     const [owned, mapped] = await Promise.all([
-      db.collection('ingestionApiKeys').where('ownerUserId', '==', callerUid).orderBy('createdAt', 'desc').limit(100).get(),
-      db.collection('ingestionApiKeys').where('mappedUserId', '==', callerUid).orderBy('createdAt', 'desc').limit(100).get(),
+      db.collection('ingestionApiKeys').where('ownerUserId', '==', callerUid).limit(100).get(),
+      db.collection('ingestionApiKeys').where('mappedUserId', '==', callerUid).limit(100).get(),
     ])
     snapshots = [owned, mapped]
   }
@@ -194,7 +193,13 @@ export const listIngestionApiKeys = onCall({ region: 'europe-west2' }, async (re
     })
   }
 
-  return { keys: Array.from(deduped.values()) }
+  const keys = Array.from(deduped.values()).sort((a, b) => {
+    const aSec = Number((a.createdAt as any)?.seconds || 0)
+    const bSec = Number((b.createdAt as any)?.seconds || 0)
+    return bSec - aSec
+  })
+
+  return { keys }
 })
 
 export const revokeIngestionApiKey = onCall({ region: 'europe-west2' }, async (request) => {
