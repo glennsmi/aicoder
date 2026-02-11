@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAuth } from '../contexts/AuthContext'
 import { 
@@ -13,6 +14,10 @@ import {
 import { db, functions } from '../config/firebaseApp'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
+
+type UsageHelpTab = 'cursor_csv' | 'ccusage_json'
+const usageHelpDialogStorageKey = 'aicoder:open-upload-help-tab'
+const usageHelpDialogEventName = 'aicoder:open-upload-help'
 
 const HelpDetails = ({
   title,
@@ -195,22 +200,44 @@ const AVAILABLE_PROVIDERS: {
   requiresOrg?: boolean
   documentationUrl?: string
   hidden?: boolean
+  action?: 'connect' | 'upload_help'
+  helpTab?: UsageHelpTab
 }[] = [
   {
-    id: 'google_cloud_billing',
-    name: 'Google Cloud Billing (BigQuery Export)',
-    description: 'Ingest GCP costs from BigQuery Billing Export (optional per-user via resource labels)',
-    icon: '☁️',
+    id: 'cursor',
+    name: 'Cursor CSV Upload',
+    description: 'Upload Cursor usage CSV using the My Usage upload flow and instructions.',
+    icon: '🖱️',
     requiresOrg: false,
-    documentationUrl: 'https://docs.cloud.google.com/billing/docs/reference/rest'
+    action: 'upload_help',
+    helpTab: 'cursor_csv'
   },
   {
-    id: 'github_copilot',
-    name: 'GitHub Copilot',
-    description: 'Track Copilot usage from GitHub Enterprise',
-    icon: '🐙',
-    requiresOrg: true,
-    documentationUrl: 'https://docs.github.com/en/rest/copilot'
+    id: 'claude_code',
+    name: 'Claude Code Personal JSON Upload',
+    description: 'Upload local ccusage JSON with the same guided steps from My Usage.',
+    icon: '🧾',
+    requiresOrg: false,
+    action: 'upload_help',
+    helpTab: 'ccusage_json'
+  },
+  {
+    id: 'anthropic_usage',
+    name: 'Anthropic Claude (Usage API)',
+    description: 'Track Claude API organization usage',
+    icon: '🤖',
+    requiresOrg: false,
+    documentationUrl: 'https://docs.claude.com/en/api/usage-cost-api',
+    action: 'connect'
+  },
+  {
+    id: 'anthropic_code',
+    name: 'Anthropic Claude Code Analytics (API)',
+    description: 'Track Claude Code developer metrics',
+    icon: '💻',
+    requiresOrg: false,
+    documentationUrl: 'https://docs.claude.com/en/api/claude-code-analytics-api',
+    action: 'connect'
   },
   {
     id: 'openai_admin_personal',
@@ -218,7 +245,8 @@ const AVAILABLE_PROVIDERS: {
     description: 'Sync OpenAI API usage for a 1-person org (daily totals by model)',
     icon: '✨',
     requiresOrg: false,
-    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage'
+    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage',
+    action: 'connect'
   },
   {
     id: 'openai_admin_org',
@@ -226,7 +254,8 @@ const AVAILABLE_PROVIDERS: {
     description: 'Sync OpenAI org-wide API usage (breakdown by OpenAI user + API key + model)',
     icon: '✨',
     requiresOrg: false,
-    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage'
+    documentationUrl: 'https://platform.openai.com/docs/api-reference/usage',
+    action: 'connect'
   },
   {
     // Keep for existing connections; prefer the two new options above.
@@ -236,48 +265,22 @@ const AVAILABLE_PROVIDERS: {
     icon: '✨',
     requiresOrg: false,
     documentationUrl: 'https://platform.openai.com/docs/api-reference/usage',
-    hidden: true
+    hidden: true,
+    action: 'connect'
   },
   {
-    id: 'anthropic_usage',
-    name: 'Anthropic Claude (Usage)',
-    description: 'Track Claude API organization usage',
-    icon: '🤖',
+    id: 'gemini',
+    name: 'Gemini',
+    description: 'Google Gemini API usage integration (coming soon)',
+    icon: '💎',
     requiresOrg: false,
-    documentationUrl: 'https://docs.claude.com/en/api/usage-cost-api'
-  },
-  {
-    id: 'anthropic_code',
-    name: 'Anthropic Claude Code Analytics',
-    description: 'Track Claude Code developer metrics',
-    icon: '💻',
-    requiresOrg: false,
-    documentationUrl: 'https://docs.claude.com/en/api/claude-code-analytics-api'
-  },
-  {
-    id: 'cursor',
-    name: 'Cursor (CSV Only)',
-    description: 'Manual CSV upload - API not available',
-    icon: '🖱️',
-    requiresOrg: false
-  },
-  {
-    id: 'codeium',
-    name: 'Codeium (Coming Soon)',
-    description: 'Monitor Codeium Teams usage',
-    icon: '🚀',
-    requiresOrg: false
-  },
-  {
-    id: 'tabnine',
-    name: 'Tabnine (Coming Soon)',
-    description: 'Track Tabnine Enterprise usage',
-    icon: '⚡',
-    requiresOrg: false
+    action: 'connect'
   },
 ]
 
 export default function APIConnectionManager() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const { organization } = useOrganization()
   const { currentUser, user } = useAuth()
   const [connections, setConnections] = useState<APIConnection[]>([])
@@ -501,15 +504,36 @@ export default function APIConnectionManager() {
     return AVAILABLE_PROVIDERS.find((p) => p.id === providerId)
   }
 
+  const openMyUsageHelp = (tab: UsageHelpTab) => {
+    try {
+      window.sessionStorage.setItem(usageHelpDialogStorageKey, tab)
+    } catch {
+      // Ignore storage failures and fall back to event dispatch only.
+    }
+
+    const openDialog = () => {
+      window.dispatchEvent(
+        new CustomEvent(usageHelpDialogEventName, {
+          detail: { tab },
+        })
+      )
+    }
+
+    if (location.pathname !== '/') {
+      navigate('/')
+      window.setTimeout(openDialog, 250)
+      return
+    }
+
+    openDialog()
+  }
+
   const isProviderSupported = (providerId: AIProvider) => {
     return [
-      'google_cloud_billing',
-      'github_copilot',
       'openai_admin_personal',
       'openai_admin_org',
       'anthropic_usage',
-      'anthropic_code',
-      'claude_code'
+      'anthropic_code'
     ].includes(providerId)
   }
 
@@ -608,14 +632,16 @@ export default function APIConnectionManager() {
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {AVAILABLE_PROVIDERS.filter(p => !p.hidden).map((provider) => {
+            const isManualUpload = provider.action === 'upload_help'
             const isSupported = isProviderSupported(provider.id)
+            const isAvailable = isManualUpload || isSupported
             const isAlreadyConnected = connections.some(c => c.provider === provider.id)
 
             return (
               <div
                 key={provider.id}
                 className={`bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 ${
-                  isSupported ? 'hover:border-accent-400 dark:hover:border-accent-400' : 'opacity-60'
+                  isAvailable ? 'hover:border-accent-400 dark:hover:border-accent-400' : 'opacity-60'
                 } transition-colors`}
               >
                 <div className="text-4xl mb-3">{provider.icon}</div>
@@ -637,16 +663,21 @@ export default function APIConnectionManager() {
                 )}
                 <button
                   onClick={() => {
+                    if (isManualUpload && provider.helpTab) {
+                      openMyUsageHelp(provider.helpTab)
+                      return
+                    }
+
                     if (isSupported && !isAlreadyConnected) {
                       setSelectedProvider(provider.id)
                       setDisplayName(provider.name)
                       setShowAddModal(true)
                     }
                   }}
-                  disabled={!isSupported || isAlreadyConnected}
+                  disabled={!isAvailable || (!isManualUpload && isAlreadyConnected)}
                   className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-neutral-900 dark:text-white font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isAlreadyConnected ? 'Already Connected' : isSupported ? 'Connect' : 'Coming Soon'}
+                  {isManualUpload ? 'Open in My Usage' : isAlreadyConnected ? 'Already Connected' : isSupported ? 'Connect' : 'Coming Soon'}
                 </button>
               </div>
             )

@@ -43,10 +43,10 @@ export default function Pricing() {
       ]
     },
     {
-      name: "Grandmaster",
+      name: "Grammaster",
       price: "Custom",
-      period: "pricing",
-      badge: "Coming Soon",
+      period: "contact sales",
+      badge: "Contact Sales",
       features: [
         "Unlimited users",
         "SSO & SAML",
@@ -68,7 +68,7 @@ export default function Pricing() {
             </span>
           </h2>
           <p className="text-xl text-neutral-700 dark:text-sand-300 max-w-2xl mx-auto">
-            From free individual plans to enterprise teams
+            From free individual plans to Grammaster enterprise teams
           </p>
         </div>
 
@@ -81,7 +81,7 @@ export default function Pricing() {
               className={`relative bg-sand-100 dark:bg-secondary-800 rounded-xl p-6 border-2 transition-all duration-300 cursor-pointer block ${
                 plan.highlighted
                   ? 'border-primary-500 shadow-xl hover:shadow-2xl'
-                  : plan.badge === "Coming Soon"
+                  : plan.badge === "Contact Sales"
                     ? 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-200 dark:hover:border-neutral-700 hover:shadow-lg'
                   : 'border-neutral-200 dark:border-neutral-700 hover:border-primary-500 hover:shadow-lg'
               }`}

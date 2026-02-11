@@ -22,7 +22,7 @@ export default function AboutPage() {
                 Measure. Motivate. Master AI.
               </h2>
               <p className="text-lg text-neutral-700 dark:text-sand-300 leading-relaxed">
-                When AI coding assistants like Cursor and GitHub Copilot started revolutionizing how we write code, we immediately adopted them across our development team. But we quickly ran into a problem: <strong className="text-neutral-900 dark:text-white">we had no visibility into what was actually happening</strong>.
+                When AI coding assistants like Cursor and Claude Code started revolutionizing how we write code, we immediately adopted them across our development team. But we quickly ran into a problem: <strong className="text-neutral-900 dark:text-white">we had no visibility into what was actually happening</strong>.
               </p>
             </div>
 

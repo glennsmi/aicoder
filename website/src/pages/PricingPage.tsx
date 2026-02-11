@@ -39,6 +39,22 @@ export default function PricingPage() {
             }}
           />
         </div>
+        <div className="container mx-auto max-w-6xl mt-6">
+          <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-sand-100 dark:bg-secondary-800 p-5 text-center">
+            <p className="text-neutral-800 dark:text-sand-300">
+              Need a <span className="font-semibold text-neutral-900 dark:text-white">Grammaster</span> enterprise setup?
+              {' '}
+              <a href="mailto:sales@aicoder.guru" className="text-primary-500 hover:text-primary-600 font-semibold">
+                Contact Sales
+              </a>
+              {' '}at{' '}
+              <a href="mailto:sales@aicoder.guru" className="text-primary-500 hover:text-primary-600 font-semibold">
+                sales@aicoder.guru
+              </a>
+              .
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* FAQ Link */}
@@ -51,7 +67,7 @@ export default function PricingPage() {
             </a>
             {' '}or{' '}
             <a href="mailto:sales@aicoder.guru" className="text-primary-500 hover:text-primary-600 font-semibold">
-              contact us
+              contact sales
             </a>
           </p>
         </div>

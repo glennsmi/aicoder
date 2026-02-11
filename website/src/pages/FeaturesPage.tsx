@@ -251,7 +251,7 @@ export default function FeaturesPage() {
                 API Integrations
               </h3>
               <p className="text-neutral-700 dark:text-neutral-500">
-                Direct API integrations with Cursor, GitHub Copilot, Codeium, and more. Automatic data sync for seamless monitoring.
+                Direct API integrations with Cursor, Claude Code, Codeium, and more. Automatic data sync for seamless monitoring.
               </p>
             </div>
           </div>

@@ -48,11 +48,11 @@ export default function TermsPage() {
             
             <h3 className="text-xl font-semibold text-neutral-900 dark:text-white mb-3">4.1 Pricing Tiers</h3>
             <ul className="list-disc pl-6 text-neutral-700 dark:text-sand-300 mb-4 space-y-2">
-              <li><strong>Free:</strong> £0/month - Individual use with limited features</li>
-              <li><strong>Individual Pro:</strong> £2.99/month - Enhanced features for individuals</li>
-              <li><strong>Small Team:</strong> £29/month - Up to 10 users</li>
-              <li><strong>Team:</strong> £49/month - Up to 30 users</li>
-              <li><strong>Enterprise:</strong> Custom pricing - Unlimited users</li>
+              <li><strong>Novice:</strong> £0/month - Individual use with core features</li>
+              <li><strong>Apprentice:</strong> £2.99/month - Enhanced features for individuals</li>
+              <li><strong>Sensei:</strong> £29/month - Up to 10 users</li>
+              <li><strong>Master:</strong> £49/month - Up to 30 users</li>
+              <li><strong>Grammaster:</strong> Custom pricing - Contact Sales at sales@aicoder.guru</li>
             </ul>
 
             <h3 className="text-xl font-semibold text-neutral-900 dark:text-white mb-3">4.2 Payment Terms</h3>

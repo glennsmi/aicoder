@@ -11,11 +11,11 @@ export default function FAQPage() {
   const faqs: FAQItem[] = [
     {
       question: "What is AICoder.Guru?",
-      answer: "AICoder.Guru is an analytics platform that helps engineering teams track and optimize their usage of AI coding assistants like Cursor, GitHub Copilot, Codeium, and more. We provide real-time visibility into costs, usage patterns, and team adoption to help you measure, motivate, and master AI coding tools."
+      answer: "AICoder.Guru is an analytics platform that helps engineering teams track and optimize their usage of AI coding assistants like Cursor, Claude Code, Codeium, and more. We provide real-time visibility into costs, usage patterns, and team adoption to help you measure, motivate, and master AI coding tools."
     },
     {
       question: "Which AI coding tools do you support?",
-      answer: "We currently support Cursor, GitHub Copilot, Codeium, Claude Code, OpenAI API, and Tabnine. You can manually upload CSV data from any tool, or use our API integrations for automatic syncing. We're constantly adding support for new platforms based on user demand."
+      answer: "We currently support Cursor (CSV import), Codeium, Claude Code analytics, and OpenAI usage integrations. You can also manually upload CSV data from any tool. We're actively expanding integrations based on customer demand."
     },
     {
       question: "How does the free Novice tier work?",
@@ -23,11 +23,11 @@ export default function FAQPage() {
     },
     {
       question: "What's the difference between the pricing tiers?",
-      answer: "Each tier builds on the previous one: Novice (Free) is for individuals with manual uploads. Apprentice (£2.99/mo) adds API sync and advanced analytics. Sensei (£29/mo) supports up to 10 team members with team analytics. Master (£49/mo) extends to 30 users with custom dashboards. Grandmaster (Custom) offers unlimited users and enterprise features like SSO and dedicated support."
+      answer: "Each tier builds on the previous one: Novice (Free) is for individuals getting started, Apprentice (£2.99/mo) adds more advanced individual capabilities, Sensei (£29/mo) supports up to 10 team members, Master (£49/mo) supports larger teams up to 30 users, and Grammaster is our custom enterprise tier with tailored onboarding and support. For Grammaster pricing, contact sales@aicoder.guru."
     },
     {
       question: "Can I try the paid tiers before committing?",
-      answer: "Yes! All paid tiers (Apprentice, Sensei, and Master) offer a free trial period. You can explore the full features without providing payment information upfront. Start your trial, and if you love it, continue with a subscription."
+      answer: "You can review current trial eligibility directly on our pricing checkout experience. We periodically run trial and onboarding offers for Apprentice, Sensei, and Master."
     },
     {
       question: "How do you calculate costs and token usage?",
@@ -47,7 +47,11 @@ export default function FAQPage() {
     },
     {
       question: "What happens if I exceed my user limit?",
-      answer: "If you're on Sensei (10 users) or Master (30 users) and need to add more team members, we'll prompt you to upgrade to the next tier. You won't lose access, but you'll need to upgrade to invite additional users. Grandmaster tier has no user limits."
+      answer: "If you're on Sensei (10 users) or Master (30 users) and need to add more team members, you'll be prompted to move to the next tier. For larger deployments and custom limits, move to Grammaster by contacting sales@aicoder.guru."
+    },
+    {
+      question: "How do I get a Grammaster (enterprise) account?",
+      answer: "Grammaster is set up through our sales team so we can tailor onboarding, user volume, support, and billing terms to your organization. Email sales@aicoder.guru and we'll help you get started."
     },
     {
       question: "Do you offer discounts for annual billing?",
@@ -71,15 +75,15 @@ export default function FAQPage() {
     },
     {
       question: "How long do you retain data?",
-      answer: "Novice tier: 90 days. Apprentice tier: 1 year. Sensei tier and above: Unlimited retention. You can always export your data before it expires, and upgrading retroactively extends retention for historical data."
+      answer: "Data retention varies by tier and feature set. Higher tiers include longer retention windows and broader reporting access. For exact retention terms by plan, check the pricing page or contact support@aicoder.guru."
     },
     {
       question: "Do you support SSO or SAML?",
-      answer: "(Coming soon) On the Grandmaster (Enterprise) tier. We support Google SSO, Microsoft Azure AD, Okta, and custom SAML providers. This ensures secure, centralized authentication for large organizations."
+      answer: "SSO/SAML options are available on the Grammaster tier with enterprise setup support. Contact sales@aicoder.guru to confirm current provider compatibility (for example Google Workspace, Microsoft Entra ID/Azure AD, Okta, and SAML providers)."
     },
     {
       question: "What kind of support do you offer?",
-      answer: "Novice tier: Community support (documentation, guides). Apprentice tier: Priority email support. Sensei/Master tiers: Priority email with faster response times. Grandmaster tier: Dedicated account manager, priority support, and custom SLA guarantees."
+      answer: "Novice includes self-serve documentation and guides. Apprentice and above include email support, with higher tiers receiving faster response targets and expanded onboarding. Grammaster includes dedicated enterprise support options."
     },
     {
       question: "Can I cancel anytime?",
@@ -95,15 +99,15 @@ export default function FAQPage() {
     },
     {
       question: "What's your uptime and reliability?",
-      answer: "We target 99.9% uptime, hosted on Google Cloud/Firebase infrastructure. We perform scheduled maintenance with advance notice and have automated backups and disaster recovery. Grandmaster tier includes SLA guarantees with uptime commitments."
+      answer: "We target high availability on Google Cloud/Firebase infrastructure and use scheduled maintenance windows, backups, and recovery practices. Grammaster customers can discuss custom SLA terms with sales."
     },
     {
       question: "Can I get a demo or onboarding help?",
-      answer: "Yes! Master tier and above includes priority onboarding. Grandmaster tier gets a dedicated account manager and personalized onboarding sessions. For all tiers, we provide comprehensive documentation, video guides, and email support."
+      answer: "Yes. We provide self-serve documentation for all tiers, with additional onboarding support on higher plans. For dedicated onboarding and rollout support, contact sales@aicoder.guru about Grammaster."
     },
     {
       question: "How does billing work?",
-      answer: "We bill monthly in advance via Stripe (credit/debit card). You'll receive an invoice by email each billing cycle. Annual subscribers are billed once per year. All prices are in GBP (£). Enterprise/Grandmaster tier can arrange custom billing terms and invoicing."
+      answer: "We bill subscriptions through Stripe and send invoices by email. Available billing cadence and payment methods are shown during checkout. Grammaster accounts can be set up with custom invoicing terms via sales@aicoder.guru."
     },
     {
       question: "Still have questions?",
