@@ -20,6 +20,7 @@ export default function Header() {
       const navigation: { name: string; href: string }[] = [
         { name: 'Features', href: '/features' },
         { name: 'Pricing', href: '/pricing' },
+        { name: 'Developers', href: '/developers/file-ingestion-api' },
       ]
 
   return (

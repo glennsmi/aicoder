@@ -6,7 +6,7 @@ export default function Footer() {
   return (
     <footer className="bg-secondary-900 text-sand-300 border-t border-secondary-700">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid md:grid-cols-4 gap-8">
+        <div className="grid md:grid-cols-5 gap-8">
           {/* Logo & About */}
           <div className="md:col-span-1">
             <a href="/" className="inline-block mb-4 group">
@@ -74,6 +74,26 @@ export default function Footer() {
                   className="text-sm hover:text-accent-400 transition-colors"
                 >
                   Contact
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* Developers */}
+          <div>
+            <h3 className="font-semibold text-white mb-4">Developers</h3>
+            <ul className="space-y-2">
+              <li>
+                <Link to="/developers/file-ingestion-api" className="text-sm hover:text-accent-400 transition-colors">
+                  File Ingestion API
+                </Link>
+              </li>
+              <li>
+                <a
+                  href="mailto:support@aicoder.guru"
+                  className="text-sm hover:text-accent-400 transition-colors"
+                >
+                  Developer Support
                 </a>
               </li>
             </ul>

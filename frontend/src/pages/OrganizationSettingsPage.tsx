@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { collection, doc, getDocs, query as fsQuery, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
-import { db, storage } from '../config/firebaseApp'
+import { db, functions, storage } from '../config/firebaseApp'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -14,6 +15,13 @@ function toMillisSafe(value: any): number {
   if (typeof value?.toMillis === 'function') return value.toMillis()
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : 0
+}
+
+function getRetentionUpgradePrompt(retentionDays: number): string {
+  if (retentionDays < 0) return 'Your plan already includes unlimited retention.'
+  if (retentionDays >= 365) return 'Need longer retention? Upgrade to Enterprise for unlimited retention.'
+  if (retentionDays >= 180) return 'Need longer retention? Upgrade to Master for up to 365 days of retention.'
+  return 'Need longer retention? Upgrade to Sensei for up to 180 days of retention.'
 }
 
 export default function OrganizationSettingsPage() {
@@ -28,7 +36,6 @@ export default function OrganizationSettingsPage() {
       name: organization?.name || '',
       allowMemberInvites: organization?.settings?.allowMemberInvites ?? true,
       requireTwoFactor: organization?.settings?.requireTwoFactor ?? false,
-      dataRetentionDays: organization?.settings?.dataRetentionDays ?? 90,
       whiteLabelBranding: organization?.settings?.reports?.whiteLabelBranding ?? false,
     }
   }, [organization])
@@ -36,10 +43,10 @@ export default function OrganizationSettingsPage() {
   const [name, setName] = useState(initial.name)
   const [allowMemberInvites, setAllowMemberInvites] = useState(initial.allowMemberInvites)
   const [requireTwoFactor, setRequireTwoFactor] = useState(initial.requireTwoFactor)
-  const [dataRetentionDays, setDataRetentionDays] = useState<number>(initial.dataRetentionDays)
   const [whiteLabelBranding, setWhiteLabelBranding] = useState<boolean>(initial.whiteLabelBranding)
   const [selectedLogo, setSelectedLogo] = useState<File | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [openingBillingPortal, setOpeningBillingPortal] = useState(false)
   const [subscriptionInternalTier, setSubscriptionInternalTier] = useState<string | null>(null)
 
   const [saving, setSaving] = useState(false)
@@ -51,6 +58,9 @@ export default function OrganizationSettingsPage() {
     || subscriptionInternalTier === 'enterprise'
   const hasSenseiPlusRetentionFallback = Number(organization?.settings?.dataRetentionDays || 0) >= 180
   const hasSenseiPlusFeature = Boolean(hasSenseiPlusSubscription || hasSenseiPlusRetentionFallback || organization?.tier === 'enterprise')
+  const retentionDays = Number(organization?.settings?.dataRetentionDays || 90)
+  const retentionDisplay = retentionDays < 0 ? 'Unlimited' : `${retentionDays} days`
+  const showRetentionUpgradeAction = retentionDays >= 0
   const currentLogoUrl = typeof organization?.settings?.branding?.logoUrl === 'string'
     ? organization.settings.branding.logoUrl
     : null
@@ -59,7 +69,6 @@ export default function OrganizationSettingsPage() {
     setName(initial.name)
     setAllowMemberInvites(initial.allowMemberInvites)
     setRequireTwoFactor(initial.requireTwoFactor)
-    setDataRetentionDays(initial.dataRetentionDays)
     setWhiteLabelBranding(initial.whiteLabelBranding)
   }, [initial])
 
@@ -208,7 +217,6 @@ export default function OrganizationSettingsPage() {
           ...organization.settings,
           allowMemberInvites,
           requireTwoFactor,
-          dataRetentionDays,
           reports: {
             ...(organization.settings?.reports || {}),
             whiteLabelBranding,
@@ -224,6 +232,30 @@ export default function OrganizationSettingsPage() {
       setError(e?.message || 'Failed to save settings.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const onUpgradeRetention = async () => {
+    if (!currentUser) return
+
+    try {
+      setOpeningBillingPortal(true)
+      setError(null)
+      setSuccess(null)
+
+      const createPortalSession = httpsCallable(functions, 'createBillingPortalSession')
+      const result = await createPortalSession({ returnUrl: window.location.href })
+      const data = result.data as { success?: boolean; url?: string }
+
+      if (!data?.success || !data?.url) {
+        throw new Error('Unable to open Stripe billing portal right now.')
+      }
+
+      window.location.href = data.url
+    } catch (e: any) {
+      console.error('Failed to open billing portal for retention upgrade:', e)
+      setError(e?.message || 'Failed to open Stripe billing portal.')
+      setOpeningBillingPortal(false)
     }
   }
 
@@ -343,22 +375,31 @@ export default function OrganizationSettingsPage() {
             </div>
           </label>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gunmetal-900 dark:text-white mb-2">
-                Data retention (days)
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={dataRetentionDays}
-                onChange={(e) => setDataRetentionDays(Number(e.target.value))}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gunmetal-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-              <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-2">
-                How long to retain usage data for this organization.
-              </p>
-            </div>
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
+            <p className="text-sm font-semibold text-gunmetal-900 dark:text-white">
+              Data retention
+            </p>
+            <p className="mt-1 text-sm text-gunmetal-700 dark:text-gray-300">
+              {retentionDisplay}
+            </p>
+            <p className="text-xs text-gunmetal-500 dark:text-gray-500 mt-2">
+              Data retention is managed by your subscription tier.
+            </p>
+            {showRetentionUpgradeAction && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <p className="text-xs text-gunmetal-600 dark:text-gray-400">
+                  {getRetentionUpgradePrompt(retentionDays)}
+                </p>
+                <button
+                  type="button"
+                  onClick={onUpgradeRetention}
+                  disabled={openingBillingPortal}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm font-semibold hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {openingBillingPortal ? 'Opening Stripe…' : 'Upgrade retention in Stripe'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

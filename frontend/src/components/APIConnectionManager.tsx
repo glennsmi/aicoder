@@ -281,7 +281,7 @@ const AVAILABLE_PROVIDERS: {
 export default function APIConnectionManager() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { organization } = useOrganization()
+  const { organization, members, currentRole } = useOrganization()
   const { currentUser, user } = useAuth()
   const [connections, setConnections] = useState<APIConnection[]>([])
   const [showAddModal, setShowAddModal] = useState(false)
@@ -306,6 +306,32 @@ export default function APIConnectionManager() {
   const [testingConnection, setTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null)
   const [syncingConnection, setSyncingConnection] = useState<string | null>(null)
+  const [ingestionKeys, setIngestionKeys] = useState<Array<{
+    keyId: string
+    keyPrefix: string
+    keySuffix?: string | null
+    name: string
+    status: 'active' | 'revoked'
+    mappedUserId: string
+    ownerUserId: string
+    mappedOrganizationId?: string | null
+    lastUsedAt?: { seconds: number; nanoseconds: number } | null
+    createdAt?: { seconds: number; nanoseconds: number } | null
+    revokedAt?: { seconds: number; nanoseconds: number } | null
+  }>>([])
+  const [keysLoading, setKeysLoading] = useState(false)
+  const [showCreateKeyModal, setShowCreateKeyModal] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('Desktop automation key')
+  const [newKeyMappedUserId, setNewKeyMappedUserId] = useState('')
+  const [createdApiKey, setCreatedApiKey] = useState<string | null>(null)
+  const [keyError, setKeyError] = useState<string | null>(null)
+  const [creatingKey, setCreatingKey] = useState(false)
+  const [revokingKeyId, setRevokingKeyId] = useState<string | null>(null)
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({})
+  const [copyToast, setCopyToast] = useState<{ visible: boolean; message: string }>({
+    visible: false,
+    message: '',
+  })
 
   // Load connections from Firestore
   useEffect(() => {
@@ -332,6 +358,188 @@ export default function APIConnectionManager() {
 
     return () => unsubscribe()
   }, [organization?.id, currentUser?.uid, user?.currentRole])
+
+  useEffect(() => {
+    if (!currentUser?.uid) return
+    if (!organization?.id) return
+
+    const loadKeys = async () => {
+      setKeysLoading(true)
+      setKeyError(null)
+      try {
+        const listIngestionApiKeys = httpsCallable<
+          { organizationId?: string },
+          { keys: Array<{
+            keyId: string
+            keyPrefix: string
+            keySuffix?: string | null
+            name: string
+            status: 'active' | 'revoked'
+            mappedUserId: string
+            ownerUserId: string
+            mappedOrganizationId?: string | null
+            lastUsedAt?: { seconds: number; nanoseconds: number } | null
+            createdAt?: { seconds: number; nanoseconds: number } | null
+            revokedAt?: { seconds: number; nanoseconds: number } | null
+          }> }
+        >(functions, 'listIngestionApiKeys')
+
+        const result = await listIngestionApiKeys(
+          currentRole === 'admin' ? { organizationId: organization.id } : {}
+        )
+        setIngestionKeys(result.data.keys || [])
+      } catch (err: any) {
+        console.error('Failed to load ingestion keys:', err)
+        setKeyError(err.message || 'Failed to load ingestion keys')
+      } finally {
+        setKeysLoading(false)
+      }
+    }
+
+    void loadKeys()
+  }, [currentUser?.uid, organization?.id, currentRole])
+
+  useEffect(() => {
+    if (newKeyMappedUserId) return
+    if (!currentUser?.uid) return
+    setNewKeyMappedUserId(currentUser.uid)
+  }, [currentUser?.uid, newKeyMappedUserId])
+
+  const reloadIngestionKeys = async () => {
+    if (!currentUser?.uid || !organization?.id) return
+    setKeysLoading(true)
+    try {
+      const listIngestionApiKeys = httpsCallable<
+        { organizationId?: string },
+        { keys: Array<{
+          keyId: string
+          keyPrefix: string
+          keySuffix?: string | null
+          name: string
+          status: 'active' | 'revoked'
+          mappedUserId: string
+          ownerUserId: string
+          mappedOrganizationId?: string | null
+          lastUsedAt?: { seconds: number; nanoseconds: number } | null
+          createdAt?: { seconds: number; nanoseconds: number } | null
+          revokedAt?: { seconds: number; nanoseconds: number } | null
+        }> }
+      >(functions, 'listIngestionApiKeys')
+      const result = await listIngestionApiKeys(currentRole === 'admin' ? { organizationId: organization.id } : {})
+      setIngestionKeys(result.data.keys || [])
+    } catch (err: any) {
+      setKeyError(err.message || 'Failed to reload ingestion keys')
+    } finally {
+      setKeysLoading(false)
+    }
+  }
+
+  const handleCreateIngestionKey = async () => {
+    if (!currentUser?.uid) return
+    if (!newKeyMappedUserId) {
+      setKeyError('Please select a user to map this key to')
+      return
+    }
+
+    setCreatingKey(true)
+    setKeyError(null)
+    setCreatedApiKey(null)
+    try {
+      const createIngestionApiKey = httpsCallable<
+        { name: string; mappedUserId?: string },
+        { keyId: string; apiKey: string }
+      >(functions, 'createIngestionApiKey')
+
+      const payload =
+        currentRole === 'admin'
+          ? { name: newKeyName.trim() || 'Desktop automation key', mappedUserId: newKeyMappedUserId }
+          : { name: newKeyName.trim() || 'Desktop automation key' }
+
+      const result = await createIngestionApiKey(payload)
+      setCreatedApiKey(result.data.apiKey)
+      await reloadIngestionKeys()
+    } catch (err: any) {
+      console.error('Failed to create ingestion key:', err)
+      setKeyError(err.message || 'Failed to create ingestion key')
+    } finally {
+      setCreatingKey(false)
+    }
+  }
+
+  const handleRevokeIngestionKey = async (keyId: string) => {
+    setRevokingKeyId(keyId)
+    setKeyError(null)
+    try {
+      const revokeIngestionApiKey = httpsCallable<{ keyId: string }, { success: boolean }>(
+        functions,
+        'revokeIngestionApiKey'
+      )
+      await revokeIngestionApiKey({ keyId })
+      await reloadIngestionKeys()
+    } catch (err: any) {
+      console.error('Failed to revoke ingestion key:', err)
+      setKeyError(err.message || 'Failed to revoke ingestion key')
+    } finally {
+      setRevokingKeyId(null)
+    }
+  }
+
+  const copyApiKey = async () => {
+    if (!createdApiKey) return
+    try {
+      await navigator.clipboard.writeText(createdApiKey)
+      setCopyToast({ visible: true, message: 'API key copied to clipboard' })
+      window.setTimeout(() => setCopyToast({ visible: false, message: '' }), 1800)
+    } catch {
+      // Keep silent if clipboard is unavailable.
+    }
+  }
+
+  const revealIngestionKey = async (keyId: string): Promise<string> => {
+    if (revealedKeys[keyId]) return revealedKeys[keyId]
+    const revealIngestionApiKey = httpsCallable<
+      { keyId: string },
+      { apiKey: string }
+    >(functions, 'revealIngestionApiKey')
+    const result = await revealIngestionApiKey({ keyId })
+    const fullKey = result.data.apiKey
+    setRevealedKeys((prev) => ({ ...prev, [keyId]: fullKey }))
+    return fullKey
+  }
+
+  const handleCopyExistingKey = async (keyId: string) => {
+    try {
+      const fullKey = await revealIngestionKey(keyId)
+      await navigator.clipboard.writeText(fullKey)
+      setCopyToast({ visible: true, message: 'API key copied to clipboard' })
+      window.setTimeout(() => setCopyToast({ visible: false, message: '' }), 1800)
+    } catch (err: any) {
+      setKeyError(err.message || 'Failed to copy API key')
+    }
+  }
+
+  const toggleRevealExistingKey = async (keyId: string) => {
+    if (revealedKeys[keyId]) {
+      setRevealedKeys((prev) => {
+        const next = { ...prev }
+        delete next[keyId]
+        return next
+      })
+      return
+    }
+    try {
+      await revealIngestionKey(keyId)
+    } catch (err: any) {
+      setKeyError(err.message || 'Failed to reveal API key')
+    }
+  }
+
+  const formatMaskedKey = (keyPrefix: string, keySuffix?: string | null): string => {
+    if (keySuffix && keySuffix.trim()) {
+      return `${keyPrefix}********${keySuffix}`
+    }
+    return `${keyPrefix}********`
+  }
 
   const handleTestConnection = async () => {
     if (!selectedProvider) return
@@ -547,6 +755,128 @@ export default function APIConnectionManager() {
         <p className="text-neutral-500 dark:text-gray-400">
           Connect your AI coding tools to automatically sync usage data
         </p>
+      </div>
+
+      {/* Ingestion API keys */}
+      <div className="mb-8 bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
+          <div>
+            <h2 className="text-xl font-semibold text-neutral-900 dark:text-white">Automated File Upload API Keys</h2>
+            <p className="text-sm text-neutral-500 dark:text-gray-400 mt-1">
+              Create user-mapped keys for desktop/cron uploads to the File Ingestion API endpoint.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <a
+              href="/developers/file-ingestion-api"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              Open API Docs
+            </a>
+            <button
+              onClick={() => {
+                setShowCreateKeyModal(true)
+                setCreatedApiKey(null)
+                setKeyError(null)
+              }}
+              className="px-3 py-2 bg-accent-400 text-neutral-900 font-semibold rounded-lg text-sm hover:bg-accent-500"
+            >
+              Create Key
+            </button>
+          </div>
+        </div>
+
+        {keyError && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-600 dark:text-red-400">{keyError}</p>
+          </div>
+        )}
+
+        {keysLoading ? (
+          <p className="text-sm text-neutral-500 dark:text-gray-400">Loading keys...</p>
+        ) : ingestionKeys.length === 0 ? (
+          <p className="text-sm text-neutral-500 dark:text-gray-400">
+            No ingestion keys yet. Create one to enable scheduled uploads from user machines.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-gray-200 dark:border-gray-700">
+                  <th className="py-2 pr-3 text-neutral-500 dark:text-gray-400 font-medium">Name</th>
+                  <th className="py-2 pr-3 text-neutral-500 dark:text-gray-400 font-medium">API Key</th>
+                  <th className="py-2 pr-3 text-neutral-500 dark:text-gray-400 font-medium">Mapped User</th>
+                  <th className="py-2 pr-3 text-neutral-500 dark:text-gray-400 font-medium">Status</th>
+                  <th className="py-2 pr-3 text-neutral-500 dark:text-gray-400 font-medium">Last Used</th>
+                  <th className="py-2 text-neutral-500 dark:text-gray-400 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ingestionKeys.map((key) => {
+                  const mappedMember = members.find((m) => m.userId === key.mappedUserId)
+                  const mappedLabel = mappedMember?.displayName || mappedMember?.email || key.mappedUserId
+                  return (
+                    <tr key={key.keyId} className="border-b border-gray-100 dark:border-gray-800">
+                      <td className="py-2 pr-3 text-neutral-900 dark:text-white">{key.name}</td>
+                      <td className="py-2 pr-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCopyExistingKey(key.keyId)}
+                            className="font-mono text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 text-neutral-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            title="Click to copy full API key"
+                          >
+                            {revealedKeys[key.keyId]
+                              ? revealedKeys[key.keyId]
+                              : formatMaskedKey(key.keyPrefix, key.keySuffix)}
+                          </button>
+                          <button
+                            onClick={() => toggleRevealExistingKey(key.keyId)}
+                            className="p-1 rounded border border-gray-200 dark:border-gray-700 text-neutral-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            title={revealedKeys[key.keyId] ? 'Hide full key' : 'Reveal full key'}
+                          >
+                            {revealedKeys[key.keyId] ? '🙈' : '👁️'}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 text-neutral-700 dark:text-gray-300">{mappedLabel}</td>
+                      <td className="py-2 pr-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            key.status === 'active'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {key.status}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-neutral-700 dark:text-gray-300">
+                        {key.lastUsedAt?.seconds
+                          ? new Date(key.lastUsedAt.seconds * 1000).toLocaleString()
+                          : 'Never'}
+                      </td>
+                      <td className="py-2">
+                        {key.status === 'active' ? (
+                          <button
+                            onClick={() => handleRevokeIngestionKey(key.keyId)}
+                            disabled={revokingKeyId === key.keyId}
+                            className="px-2 py-1 text-xs border border-red-300 text-red-700 rounded hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20 disabled:opacity-50"
+                          >
+                            {revokingKeyId === key.keyId ? 'Revoking...' : 'Revoke'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-neutral-500 dark:text-gray-400">Revoked</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Active Connections */}
@@ -1121,6 +1451,126 @@ export default function APIConnectionManager() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Create ingestion key modal */}
+      {showCreateKeyModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-xl p-6">
+            <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-4">
+              Create File Ingestion API Key
+            </h3>
+
+            {createdApiKey ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <p className="text-sm text-green-700 dark:text-green-400">
+                    Key created successfully. This is the only time you can view the full key.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={createdApiKey}
+                      className="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-mono text-neutral-900 dark:text-white"
+                    />
+                    <button
+                      onClick={copyApiKey}
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      setShowCreateKeyModal(false)
+                      setCreatedApiKey(null)
+                      setKeyError(null)
+                    }}
+                    className="px-4 py-2 bg-accent-400 text-neutral-900 font-semibold rounded-lg hover:bg-accent-500"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {keyError && (
+                  <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <p className="text-sm text-red-600 dark:text-red-400">{keyError}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">Key Name</label>
+                  <input
+                    type="text"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="Desktop automation key"
+                    className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-400"
+                  />
+                </div>
+
+                {currentRole === 'admin' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-900 dark:text-white mb-2">
+                      Mapped User
+                    </label>
+                    <select
+                      value={newKeyMappedUserId}
+                      onChange={(e) => setNewKeyMappedUserId(e.target.value)}
+                      className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent-400"
+                    >
+                      {members.map((member) => (
+                        <option key={member.userId} value={member.userId}>
+                          {(member.displayName || member.email || member.userId) + ` (${member.role})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <p className="text-sm text-neutral-600 dark:text-gray-300">
+                      This key will be mapped to your user account.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setShowCreateKeyModal(false)
+                      setCreatedApiKey(null)
+                      setKeyError(null)
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-neutral-900 dark:text-white font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateIngestionKey}
+                    disabled={creatingKey || !newKeyName.trim() || !newKeyMappedUserId}
+                    className="flex-1 px-4 py-2 bg-accent-400 text-neutral-900 font-semibold rounded-lg hover:bg-accent-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {creatingKey ? 'Creating...' : 'Create Key'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {copyToast.visible && (
+        <div className="fixed bottom-5 right-5 z-[70] bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+          <span className="text-sm">✅</span>
+          <span className="text-sm font-medium">{copyToast.message}</span>
         </div>
       )}
     </div>

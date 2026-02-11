@@ -13,6 +13,7 @@ import TermsPage from './pages/TermsPage'
 import CookiesPage from './pages/CookiesPage'
 import AcceptableUsePage from './pages/AcceptableUsePage'
 import CheckoutSuccessPage from './pages/260209_2129_CheckoutSuccessPage'
+import DeveloperFileIngestionDocsPage from './pages/260211_1147_DeveloperFileIngestionDocsPage'
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/cookies" element={<CookiesPage />} />
                 <Route path="/acceptable-use" element={<AcceptableUsePage />} />
+                <Route path="/developers/file-ingestion-api" element={<DeveloperFileIngestionDocsPage />} />
               </Routes>
             </main>
             <Footer />

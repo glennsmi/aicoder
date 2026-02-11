@@ -297,21 +297,15 @@ export default function DashboardPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {streamOptions.map((s) => {
-                const active = selectedStreamIds.length === 0 || selectedStreamIds.includes(s.id)
+                const active = selectedStreamIds.includes(s.id)
                 return (
                   <button
                     key={s.id}
                     type="button"
                     onClick={() => {
                       setSelectedStreamIds((prev) => {
-                        // Empty array means "All" — switching to explicit set on first toggle.
-                        const next = prev.length === 0 ? streamOptions.map((x) => x.id) : [...prev]
-                        const has = next.includes(s.id)
-                        const updated = has ? next.filter((x) => x !== s.id) : [...next, s.id]
-                        // If all are selected, collapse back to "All".
-                        const allIds = streamOptions.map((x) => x.id)
-                        const allSelected = allIds.every((id) => updated.includes(id))
-                        return allSelected ? [] : updated
+                        const has = prev.includes(s.id)
+                        return has ? prev.filter((x) => x !== s.id) : [...prev, s.id]
                       })
                     }}
                     className={[
@@ -327,7 +321,7 @@ export default function DashboardPage() {
                 )
               })}
               <div className="text-xs text-gray-500 dark:text-gray-400 self-center">
-                {selectedStreamIds.length === 0 ? 'All' : `${selectedStreamIds.length} selected`}
+                {selectedStreamIds.length === 0 ? 'All (no stream filter)' : `${selectedStreamIds.length} selected`}
               </div>
             </div>
           </div>
