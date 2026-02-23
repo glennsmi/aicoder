@@ -85,12 +85,18 @@ function firstExpandedModelNameFromRaw(raw: unknown): string | undefined {
   return undefined
 }
 
-function toSourceLabel(data: any): string {
+function toModelSourceKey(data: any): string {
   const streamId = String(data?.labels?.streamId || '').trim()
   const sourceType = String(data?.sourceType || '').trim()
   const provider = String(data?.provider || '').trim()
   const raw = streamId || sourceType || provider || 'unknown'
   return normalizeModelMappingSourceKey(raw)
+}
+
+function toSourceLabel(data: any): string {
+  const explicitLabel = String(data?.source?.label || '').trim()
+  if (explicitLabel) return explicitLabel
+  return toModelSourceKey(data)
 }
 
 export async function getUserCursorUsageEventsV2(
@@ -132,13 +138,14 @@ export async function getUserCursorUsageEventsV2(
     const data: any = d.data()
     const eventAtMs = Number(data.eventAtMs)
     const source = toSourceLabel(data)
+    const modelSource = toModelSourceKey(data)
     let modelName = String(data?.model?.name || '')
     let expandedModelName =
       typeof data?.model?.expandedName === 'string' ? String(data.model.expandedName).trim() : undefined
     if (!expandedModelName) {
       expandedModelName = firstExpandedModelNameFromRaw(data?.raw)
     }
-    modelName = resolveCanonicalModelName(modelName, source)
+    modelName = resolveCanonicalModelName(modelName, modelSource)
     const tokensTotal = Number(data?.tokens?.total || 0)
 
     // Reconstruct Cursor tokenBreakdown if available (so the chart can show input/output/cache details).
@@ -193,6 +200,7 @@ export async function getUserCursorUsageEventsV2(
 function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): CursorUsageV2 | null {
   const data: any = d.data()
   const source = toSourceLabel(data)
+  const modelSource = toModelSourceKey(data)
 
   const eventAtMs =
     toMillis(data?.eventAtMs) ??
@@ -217,7 +225,7 @@ function mapAnyDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): Curso
   }
 
   if (!model) return null
-  model = resolveCanonicalModelName(model, source)
+  model = resolveCanonicalModelName(model, modelSource)
 
   // Tokens: support multiple shapes
   const tokensTotal =

@@ -65,6 +65,7 @@ type GroupByMode = 'model' | 'expandedModel' | 'source'
 const FRIENDLY_SOURCE_LABELS: Record<string, string> = {
   cursor_csv: 'Cursor CSV Upload',
   ccusage_daily_json: 'Claude Code Usage',
+  'claude code desktop api': 'Claude Code Desktop API',
   claude_code_usage: 'Claude Code Usage',
   anthropic_usage_api: 'Anthropic Usage API',
   anthropic_code_api: 'Anthropic Code API',
@@ -754,14 +755,14 @@ export default function CursorUsageChart({
     return h >>> 0
   }
 
-  const getModelColorByName = (name: string) => {
-    const idx = hashString32(name) % CORE_MODEL_COLORS.length
-    return CORE_MODEL_COLORS[idx]!
-  }
-
   const modelDefs: ModelDef[] = useMemo(() => {
     const used = new Set<string>()
     const out: ModelDef[] = []
+    const colorIndexByName = new Map<string, number>()
+    const usedColorIndexes = new Set<number>()
+    const paletteSize = CORE_MODEL_COLORS.length
+    // Use a coprime step to spread assignments across the palette.
+    const paletteStep = 7
 
     const hexToRgb = (hex: string) => {
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -771,7 +772,21 @@ export default function CursorUsageChart({
     }
 
     for (const name of allModels) {
-      const baseColor = getModelColorByName(name)
+      const start = hashString32(name) % paletteSize
+      let chosen = start
+      for (let attempt = 0; attempt < paletteSize; attempt++) {
+        const candidate = (start + attempt * paletteStep) % paletteSize
+        if (!usedColorIndexes.has(candidate)) {
+          chosen = candidate
+          usedColorIndexes.add(candidate)
+          break
+        }
+      }
+      colorIndexByName.set(name, chosen)
+    }
+
+    for (const name of allModels) {
+      const baseColor = CORE_MODEL_COLORS[colorIndexByName.get(name) ?? 0]!
       const rgb = hexToRgb(baseColor)
       const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`
       const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)`
@@ -797,6 +812,12 @@ export default function CursorUsageChart({
   const modelNameByKey = useMemo(() => {
     const m = new Map<string, string>()
     for (const d of modelDefs) m.set(d.key, d.displayName)
+    return m
+  }, [modelDefs])
+
+  const modelBaseColorByName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of modelDefs) m.set(d.name, d.baseColor)
     return m
   }, [modelDefs])
 
@@ -1070,7 +1091,9 @@ export default function CursorUsageChart({
   
   // Note: previously used to show a fallback warning under the title; no longer needed.
   
-  const getModelBaseColor = (modelName: string) => getModelColorByName(modelName)
+  const getModelBaseColor = (modelName: string) =>
+    modelBaseColorByName.get(modelName) ??
+    CORE_MODEL_COLORS[hashString32(modelName) % CORE_MODEL_COLORS.length]!
 
   // Custom tooltip
   const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
@@ -1157,13 +1180,13 @@ export default function CursorUsageChart({
             : spaceBelow >= estimatedHeightPx + margin ? 'below'
               : spaceAbove >= spaceBelow ? 'above' : 'below'
 
-        const assumedWidth = 360
+        const assumedWidth = Math.min(430, window.innerWidth - 24)
         const left = clamp(cursorX, assumedWidth / 2 + 12, window.innerWidth - assumedWidth / 2 - 12)
         const top = cursorY
 
         return createPortal((
           <div
-            className="rounded-lg shadow-xl min-w-[280px] border border-gray-200 overflow-hidden"
+            className="rounded-lg shadow-xl w-[430px] max-w-[calc(100vw-24px)] border border-gray-200 overflow-hidden"
             style={{
               position: 'fixed',
               left,
@@ -1251,13 +1274,13 @@ export default function CursorUsageChart({
           : spaceBelow >= estimatedHeightPx + margin ? 'below'
             : spaceAbove >= spaceBelow ? 'above' : 'below'
 
-      const assumedWidth = 360
+      const assumedWidth = Math.min(430, window.innerWidth - 24)
       const left = clamp(cursorX, assumedWidth / 2 + 12, window.innerWidth - assumedWidth / 2 - 12)
       const top = cursorY
 
       return createPortal((
         <div
-          className="rounded-lg shadow-xl border border-gray-200 overflow-hidden"
+          className="rounded-lg shadow-xl w-[430px] max-w-[calc(100vw-24px)] border border-gray-200 overflow-hidden"
           style={{
             position: 'fixed',
             left,
@@ -1289,14 +1312,14 @@ export default function CursorUsageChart({
               {barPayload
                 .filter((entry: any) => entry.value > 0)
                 .map((entry: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between text-sm py-0.5">
-                    <span className="inline-flex items-center gap-2 min-w-0">
+                  <div key={index} className="flex items-center justify-between text-xs py-0.5">
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap min-w-0">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }}></span>
-                      <span className="text-gray-700 truncate">
+                      <span className="text-gray-700 whitespace-nowrap">
                         {entry.name ?? (modelNameByKey.get(String(entry.dataKey)) ?? entry.dataKey)}
                       </span>
                     </span>
-                    <span className="font-semibold text-gray-900 tabular-nums ml-3">
+                    <span className="font-semibold text-gray-900 tabular-nums ml-3 whitespace-nowrap shrink-0">
                       {formatValue(entry.value)} {unit}
                     </span>
                   </div>
@@ -1305,8 +1328,9 @@ export default function CursorUsageChart({
 
             {totalValue > 0 && (
               <div className="border-t border-gray-200 mt-2 pt-2">
-                <p className="text-sm font-semibold text-gray-900">
-                  Total: {formatValue(totalValue)} {unit}
+                <p className="text-xs font-semibold text-gray-900 flex items-center justify-between whitespace-nowrap">
+                  <span>Total:</span>
+                  <span>{formatValue(totalValue)} {unit}</span>
                 </p>
               </div>
             )}

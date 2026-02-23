@@ -1,8 +1,10 @@
+const ingestionEndpoint = 'https://europe-west2-aicoder-guru.cloudfunctions.net/ingestUsageFileViaApi'
+
 const statusCodes = [
   { code: 200, meaning: 'Import accepted and processed', action: 'Store importId and metrics for audit' },
   { code: 400, meaning: 'Request shape or file format is invalid', action: 'Validate body, file type, and required fields' },
   { code: 401, meaning: 'API key is missing or invalid', action: 'Check Authorization header and key state' },
-  { code: 403, meaning: 'Request userId does not match key mapping', action: 'Send the mapped userId for this API key' },
+  { code: 403, meaning: 'Provided userId does not match key mapping', action: 'Remove userId or send the mapped userId for this API key' },
   { code: 409, meaning: 'Duplicate import already processed', action: 'Treat as safe duplicate and skip re-upload' },
   { code: 413, meaning: 'Payload too large', action: 'Split files into smaller chunks before retrying' },
   { code: 429, meaning: 'Rate limit exceeded', action: 'Back off and retry with jitter' },
@@ -17,8 +19,8 @@ const errorCodes = [
   },
   {
     code: 'user_mismatch',
-    meaning: 'Request userId does not match the user mapped to this key.',
-    fix: 'Pass the exact mapped userId or use the correct user-bound key.',
+    meaning: 'Provided userId does not match the user mapped to this key.',
+    fix: 'Omit userId (recommended) or pass the exact mapped userId.',
   },
   {
     code: 'file_type_not_supported',
@@ -69,7 +71,7 @@ export default function DeveloperFileIngestionDocsPage() {
           <article className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-secondary-800 p-6">
             <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Authentication model</h2>
             <p className="text-neutral-700 dark:text-sand-300 mb-4">
-              Use `Authorization: Bearer &lt;api_key&gt;`. Upload keys are always mapped to one human user and every upload must be attributed to that user.
+              Use `Authorization: Bearer &lt;api_key&gt;`. Upload keys are always mapped to one human user and every upload is attributed to that mapped user.
             </p>
             <ul className="list-disc pl-6 space-y-2 text-neutral-700 dark:text-sand-300">
               <li><strong>User-bound key:</strong> one key maps to one user identity.</li>
@@ -84,17 +86,16 @@ export default function DeveloperFileIngestionDocsPage() {
             <h2 className="text-2xl font-bold text-neutral-900 dark:text-white mb-4">Endpoint reference</h2>
             <div className="space-y-3 text-neutral-700 dark:text-sand-300">
               <p><strong>Method:</strong> `POST`</p>
-              <p><strong>Path:</strong> `/v1/ingestion/files`</p>
+              <p><strong>Endpoint URL:</strong> <code>{ingestionEndpoint}</code></p>
               <p><strong>Content type:</strong> `multipart/form-data`</p>
               <p><strong>Required field:</strong> `file`</p>
-              <p><strong>Required field:</strong> `userId` (must match key mapping)</p>
+              <p><strong>Optional field:</strong> `userId` (if provided, must match key mapping)</p>
               <p><strong>Optional fields:</strong> `sourceLabel`, `idempotencyKey`</p>
             </div>
             <div className="mt-4 rounded-lg bg-neutral-900 text-sand-300 p-4 overflow-x-auto">
-              <pre className="text-sm leading-relaxed">{`curl -X POST "https://<region>-<project>.cloudfunctions.net/v1/ingestion/files" \\
+              <pre className="text-sm leading-relaxed">{`curl -X POST "${ingestionEndpoint}" \\
   -H "Authorization: Bearer $AICODER_API_KEY" \\
   -F "file=@/path/to/cursor-usage.csv" \\
-  -F "userId=user_12345" \\
   -F "sourceLabel=nightly-cron"`}</pre>
             </div>
           </article>
@@ -178,13 +179,12 @@ export default function DeveloperFileIngestionDocsPage() {
 import FormData from 'form-data'
 import fetch from 'node-fetch'
 
-const endpoint = 'https://<region>-<project>.cloudfunctions.net/v1/ingestion/files'
+const endpoint = '${ingestionEndpoint}'
 const filePath = '/path/to/cursor-usage.csv'
 
 async function upload() {
   const form = new FormData()
   form.append('file', fs.createReadStream(filePath))
-  form.append('userId', 'user_12345')
   form.append('sourceLabel', 'nightly-cron')
   form.append('idempotencyKey', '2026-02-11-nightly-user123')
 
@@ -215,7 +215,7 @@ upload().catch(console.error)`}</pre>
             </ul>
           </article>
 
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">Last updated: 2026-02-11. Need help? Contact support@aicoder.guru.</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Last updated: 2026-02-12. Need help? Contact support@aicoder.guru.</p>
         </div>
       </section>
     </div>

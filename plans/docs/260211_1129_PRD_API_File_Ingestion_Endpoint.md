@@ -169,7 +169,11 @@ Suggested fields:
 ## API Contract (Draft)
 
 ### Endpoint
-`POST /v1/ingestion/files`
+`POST https://europe-west2-aicoder-guru.cloudfunctions.net/ingestUsageFileViaApi`
+
+Current v1 behavior uses the direct Firebase function URL above.
+If a friendlier versioned path is introduced later (for example `/v1/ingestion/files` via rewrite/proxy),
+it must remain backward-compatible with this endpoint contract.
 
 ### Headers
 - `Authorization: Bearer <api_key>`

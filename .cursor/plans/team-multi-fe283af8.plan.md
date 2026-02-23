@@ -1,4 +1,82 @@
-<!-- fe283af8-8c91-459e-b118-73641e08b793 bbd6029b-d3cb-4a6a-834e-a8161b343175 -->
+---
+name: Multi-Tenant Team Platform Transformation
+overview: ""
+todos:
+  - id: 8af327be-ab71-43a3-b7a4-aeb0c8660e82
+    content: Design and implement Firestore collections for organizations, teams, members, and API connections with proper indexing
+    status: pending
+  - id: 1ac79dae-07bb-4672-9d8a-cbb3128ae0a9
+    content: Create shared TypeScript types and Zod schemas for organizations, teams, billing, and API connectors
+    status: pending
+  - id: 978085e3-76d4-4ef1-a0ff-91c0856c6d76
+    content: Update Firestore security rules to support multi-tenant organization-based access control
+    status: pending
+  - id: c7ae81f7-70a1-4988-8bac-85d5e1af8c23
+    content: Implement OrganizationContext for frontend state management of org data, roles, and permissions
+    status: pending
+  - id: a03beed5-cf8e-47af-9568-16465f037de4
+    content: Enhance authentication flow to handle organization invitations and tier assignment
+    status: pending
+  - id: c923dc0c-b575-4e73-b4bf-0fc6a12bef80
+    content: "Build invitation system: backend functions, email templates, and acceptance flow"
+    status: pending
+  - id: 61eedf1e-6fab-47aa-84ae-b4f17eec939f
+    content: Create organization setup wizard for new team/enterprise account creation
+    status: pending
+  - id: 4f8456b3-784e-4b22-9a37-690d0e2d27ca
+    content: Implement role-based access control system with permission checking utilities
+    status: pending
+  - id: 847e7fa5-dd32-45ca-ace4-a93254a7c9dd
+    content: Integrate Stripe for subscription management, webhooks, and billing dashboard
+    status: pending
+  - id: ed217f62-5dfc-4446-8f6a-14fb04691b22
+    content: Implement pricing tier enforcement and feature gating across the application
+    status: pending
+  - id: a9c0a01c-864c-42c1-89ea-2097b4150be0
+    content: "Build team management interface: create teams, assign managers, add members"
+    status: pending
+  - id: 44809ca4-a1fe-4708-a076-2302b03d873f
+    content: Create user management interface for admins to invite, suspend, and manage org users
+    status: pending
+  - id: 899c766b-720c-4760-a39a-cd69e4c474f2
+    content: Design and implement base API connector framework with authentication and sync logic
+    status: pending
+  - id: a94eba97-d603-4b02-87e0-5051a3557810
+    content: Implement Cursor API connector with authentication and usage data fetching
+    status: pending
+  - id: 98d6bc18-4044-439b-a4b8-9e967fc19bbf
+    content: Implement GitHub Copilot API connector for enterprise usage data
+    status: pending
+  - id: 65871f08-8838-4adc-8455-801e36d4b86f
+    content: Create Cloud Function scheduler for automated daily API syncs
+    status: pending
+  - id: 87d0b7a5-8915-424d-9eca-04d201550d47
+    content: Build API connection management interface for admins to configure integrations
+    status: pending
+  - id: c0a4d503-ed62-421c-8bb5-81a225aab3d8
+    content: Create organization dashboard with org-wide usage analytics and user breakdowns
+    status: pending
+  - id: 31eaf7c8-a4c9-44c3-acbe-78eb35c05b1a
+    content: Build team analytics views for team managers with member breakdowns
+    status: pending
+  - id: bc00ffe0-9bbd-4cb4-85e3-f5f4f2d2e710
+    content: Implement export functionality for PDF/CSV/Excel reports with scheduling
+    status: pending
+  - id: 551d4adb-a170-4ce4-969e-70c36d562f36
+    content: Create migration script to convert existing users to FREE_INDIVIDUAL tier with personal orgs
+    status: pending
+  - id: 98f1e938-f5cf-4a70-92a2-3ed6a569fcf3
+    content: Update navigation structure with role-based menu items and routing
+    status: pending
+  - id: 3f1ac3b2-af29-4366-ad14-394e0855bd6d
+    content: Refactor existing components (CursorUsageChart, CSVImport) for org awareness and filtering
+    status: pending
+  - id: 1308d7a0-278f-492f-aeb2-1a15435a9597
+    content: "Implement additional API connectors: Codeium, Claude Code, OpenAI, Tabnine"
+    status: pending
+isProject: false
+---
+
 # Multi-Tenant Team Platform Transformation
 
 ## Architecture Overview
@@ -509,65 +587,48 @@ Implement Cloud Scheduler tasks:
 ## Implementation Order
 
 1. **Foundation** (Week 1-2)
-
-                        - Database schema design
-                        - Type definitions in `shared/`
-                        - Update Firestore rules
-                        - Organization context
-
+  - Database schema design
+                  - Type definitions in `shared/`
+                  - Update Firestore rules
+                  - Organization context
 2. **Authentication & Invitations** (Week 3)
-
-                        - Enhanced auth flow
-                        - Invitation system
-                        - Organization setup wizard
-
+  - Enhanced auth flow
+                  - Invitation system
+                  - Organization setup wizard
 3. **RBAC & Permissions** (Week 4)
-
-                        - Permission system implementation
-                        - Data access patterns
-                        - Frontend permission guards
-
+  - Permission system implementation
+                  - Data access patterns
+                  - Frontend permission guards
 4. **Billing Integration** (Week 5-6)
-
-                        - Stripe setup
-                        - Subscription management
-                        - Billing dashboard
-                        - Pricing tier enforcement
-
+  - Stripe setup
+                  - Subscription management
+                  - Billing dashboard
+                  - Pricing tier enforcement
 5. **Team Management** (Week 7)
-
-                        - Teams data model
-                        - Team management UI
-                        - User assignment flows
-
+  - Teams data model
+                  - Team management UI
+                  - User assignment flows
 6. **API Connectors** (Week 8-10)
-
-                        - Connector framework
-                        - Cursor API integration
-                        - GitHub Copilot integration
-                        - Sync scheduler
-                        - Error handling & monitoring
-
+  - Connector framework
+                  - Cursor API integration
+                  - GitHub Copilot integration
+                  - Sync scheduler
+                  - Error handling & monitoring
 7. **Analytics & Dashboards** (Week 11-12)
-
-                        - Organization dashboard
-                        - Team analytics
-                        - Enhanced reporting
-                        - Export functionality
-
+  - Organization dashboard
+                  - Team analytics
+                  - Enhanced reporting
+                  - Export functionality
 8. **Migration & Testing** (Week 13)
-
-                        - Data migration script
-                        - User communication
-                        - Staged rollout
-                        - Load testing
-
+  - Data migration script
+                  - User communication
+                  - Staged rollout
+                  - Load testing
 9. **Additional API Connectors** (Week 14+)
-
-                        - Codeium
-                        - Claude Code
-                        - OpenAI Codex
-                        - Tabnine
+  - Codeium
+                  - Claude Code
+                  - OpenAI Codex
+                  - Tabnine
 
 ## Key Files to Create/Modify
 
@@ -616,24 +677,19 @@ Implement Cloud Scheduler tasks:
 ## Testing Strategy
 
 1. **Unit Tests**
-
-                        - Permission system
-                        - Data access helpers
-                        - API connector logic
-
+  - Permission system
+                  - Data access helpers
+                  - API connector logic
 2. **Integration Tests**
-
-                        - Organization creation flow
-                        - User invitation flow
-                        - API sync process
-                        - Billing webhooks
-
+  - Organization creation flow
+                  - User invitation flow
+                  - API sync process
+                  - Billing webhooks
 3. **E2E Tests**
-
-                        - Admin user journey
-                        - Team manager journey
-                        - Member user journey
-                        - Upgrade/downgrade flows
+  - Admin user journey
+                  - Team manager journey
+                  - Member user journey
+                  - Upgrade/downgrade flows
 
 ## Monitoring & Observability
 
@@ -663,29 +719,3 @@ Implement Cloud Scheduler tasks:
 - Advanced forecasting with ML
 - Usage policies and enforcement
 
-### To-dos
-
-- [ ] Design and implement Firestore collections for organizations, teams, members, and API connections with proper indexing
-- [ ] Create shared TypeScript types and Zod schemas for organizations, teams, billing, and API connectors
-- [ ] Update Firestore security rules to support multi-tenant organization-based access control
-- [ ] Implement OrganizationContext for frontend state management of org data, roles, and permissions
-- [ ] Enhance authentication flow to handle organization invitations and tier assignment
-- [ ] Build invitation system: backend functions, email templates, and acceptance flow
-- [ ] Create organization setup wizard for new team/enterprise account creation
-- [ ] Implement role-based access control system with permission checking utilities
-- [ ] Integrate Stripe for subscription management, webhooks, and billing dashboard
-- [ ] Implement pricing tier enforcement and feature gating across the application
-- [ ] Build team management interface: create teams, assign managers, add members
-- [ ] Create user management interface for admins to invite, suspend, and manage org users
-- [ ] Design and implement base API connector framework with authentication and sync logic
-- [ ] Implement Cursor API connector with authentication and usage data fetching
-- [ ] Implement GitHub Copilot API connector for enterprise usage data
-- [ ] Create Cloud Function scheduler for automated daily API syncs
-- [ ] Build API connection management interface for admins to configure integrations
-- [ ] Create organization dashboard with org-wide usage analytics and user breakdowns
-- [ ] Build team analytics views for team managers with member breakdowns
-- [ ] Implement export functionality for PDF/CSV/Excel reports with scheduling
-- [ ] Create migration script to convert existing users to FREE_INDIVIDUAL tier with personal orgs
-- [ ] Update navigation structure with role-based menu items and routing
-- [ ] Refactor existing components (CursorUsageChart, CSVImport) for org awareness and filtering
-- [ ] Implement additional API connectors: Codeium, Claude Code, OpenAI, Tabnine

@@ -23,6 +23,8 @@ type SourceConfig = {
   modelSource: 'cursor_csv' | 'ccusage_daily_json'
 }
 
+const API_SOURCE_LABEL = 'Claude Code Desktop API'
+
 type RequestWithRawBody = Request & { rawBody?: Buffer }
 
 type MappingObservation = {
@@ -453,6 +455,7 @@ async function ingestRowsForUser(params: {
         fileHash,
         rowIndex: i,
         fingerprint,
+        label: API_SOURCE_LABEL,
         ...(sourceLabel ? { sourceLabel } : {}),
       },
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -572,15 +575,12 @@ export const ingestUsageFileViaApi = onRequest(
         ? await parseMultipartRequest(reqWithRawBody)
         : await parseJsonRequest(reqWithRawBody)
 
-      const requestUserId = String(parsedRequest.userId || '').trim()
-      if (!requestUserId) {
-        jsonError(response, 400, 'missing_user_id', 'userId is required and must match the API key mapping')
-        return
-      }
-      if (requestUserId !== keyInfo.mappedUserId) {
+      const providedUserId = String(parsedRequest.userId || '').trim()
+      if (providedUserId && providedUserId !== keyInfo.mappedUserId) {
         jsonError(response, 403, 'user_mismatch', 'Provided userId does not match key mapping')
         return
       }
+      const resolvedUserId = keyInfo.mappedUserId
 
       const parsed = parseUsageFile(parsedRequest.fileName, parsedRequest.fileText)
       if (parsed.fileType === 'unknown') {
@@ -608,7 +608,7 @@ export const ingestUsageFileViaApi = onRequest(
           : `api_ingest_${Date.now()}_${fileHash.slice(0, 10)}`
       const sourceConfig = sourceConfigForFileType(parsed.fileType)
       const ingestResult = await ingestRowsForUser({
-        uid: requestUserId,
+        uid: resolvedUserId,
         rows: parsed.rows,
         importId,
         fileName: parsedRequest.fileName,

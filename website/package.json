@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@posthog/react": "^1.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.4.0",
+    "posthog-js": "^1.346.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.4",

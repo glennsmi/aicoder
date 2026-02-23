@@ -44,12 +44,18 @@ function toMillis(v: unknown): number | null {
   return null
 }
 
-function toSourceLabel(data: any): string {
+function toModelSourceKey(data: any): string {
   const streamId = String(data?.labels?.streamId || '').trim()
   const sourceType = String(data?.sourceType || '').trim()
   const provider = String(data?.provider || '').trim()
   const raw = streamId || sourceType || provider || 'unknown'
   return normalizeModelMappingSourceKey(raw)
+}
+
+function toSourceLabel(data: any): string {
+  const explicitLabel = String(data?.source?.label || '').trim()
+  if (explicitLabel) return explicitLabel
+  return toModelSourceKey(data)
 }
 
 function firstExpandedModelNameFromRaw(raw: unknown): string | undefined {
@@ -66,6 +72,7 @@ function firstExpandedModelNameFromRaw(raw: unknown): string | undefined {
 function mapOrgUsageEventDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentData>): OrgUsageRow | null {
   const data: any = d.data()
   const source = toSourceLabel(data)
+  const modelSource = toModelSourceKey(data)
 
   const eventAtMs = toMillis(data?.eventAtMs) ?? Number(data?.eventAtMs)
   if (!eventAtMs || !Number.isFinite(eventAtMs) || eventAtMs <= 0) return null
@@ -77,7 +84,7 @@ function mapOrgUsageEventDocToCursorUsageV2(d: QueryDocumentSnapshot<DocumentDat
     expandedModelName = firstExpandedModelNameFromRaw(data?.raw)
   }
   if (!modelName) return null
-  modelName = resolveCanonicalModelName(modelName, source)
+  modelName = resolveCanonicalModelName(modelName, modelSource)
 
   const tokensTotal = Number(data?.tokens?.total ?? 0) || 0
 
