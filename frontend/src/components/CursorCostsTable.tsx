@@ -1,8 +1,63 @@
 import { useMemo, useState } from 'react'
 import { CursorUsageV2 as CursorUsage } from '@shared'
+import * as Popover from '@radix-ui/react-popover'
 
 interface CursorCostsTableProps {
   data: CursorUsage[]
+}
+
+type HoverPopoverProps = {
+  trigger: React.ReactNode
+  children: React.ReactNode
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  align?: 'start' | 'center' | 'end'
+  sideOffset?: number
+  collisionPadding?: number
+  contentClassName?: string
+}
+
+function HoverPopover({
+  trigger,
+  children,
+  side = 'top',
+  align = 'start',
+  sideOffset = 8,
+  collisionPadding = 12,
+  contentClassName,
+}: HoverPopoverProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <span
+          className="inline-block"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+        >
+          {trigger}
+        </span>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side={side}
+          align={align}
+          sideOffset={sideOffset}
+          collisionPadding={collisionPadding}
+          className={[
+            'z-[100000] outline-none',
+            contentClassName ?? '',
+          ].join(' ')}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {children}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
 }
 
 export default function CursorCostsTable({ data }: CursorCostsTableProps) {
@@ -126,8 +181,8 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
   }, [dataWithTotals])
 
   return (
-    <div className="overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="overflow-visible">
+      <div className="overflow-x-auto overflow-y-visible">
         <table className="w-full">
           <thead>
             <tr className="bg-gradient-to-r from-gunmetal-900 to-secondary-800 text-white dark:from-gray-900 dark:to-gray-800">
@@ -252,35 +307,43 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                         {row.model}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-text-primary group/input relative">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-lg">{formatTokens(hasTokenBreakdown ? totalInputTokens : 0)}</span>
-                        <span className="text-xs text-text-secondary">tokens</span>
-                        {hasTokenBreakdown && row.tokenBreakdown && (
-                          <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                      </div>
-                      {hasTokenBreakdown && row.tokenBreakdown && (
-                        <div className="invisible group-hover/input:visible absolute left-0 top-full mt-1 z-50 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl w-72">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-text-primary">
+                      {hasTokenBreakdown && row.tokenBreakdown ? (
+                        <HoverPopover
+                          trigger={(
+                            <span className="inline-flex items-center gap-2">
+                              <span className="text-lg">{formatTokens(totalInputTokens)}</span>
+                              <span className="text-xs text-text-secondary">tokens</span>
+                              <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </span>
+                          )}
+                          side="top"
+                          align="start"
+                          contentClassName="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl w-72"
+                        >
                           <div className="font-semibold mb-2 text-primary-300">Input Token Breakdown</div>
                           <div className="space-y-1">
                             <div className="flex justify-between">
-                              <span className="text-gray-300">Input (w/ Cache Write):</span>
-                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                              <span className="text-gray-200">Input Tokens (Total):</span>
+                              <span className="font-medium text-gray-200">{formatTokens(totalInputTokens)}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-300">Input (w/o Cache Write):</span>
+                              <span className="text-gray-300">Input (w/o cache write):</span>
                               <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithoutCacheWrite)}</span>
                             </div>
-                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                            <div className="flex justify-between">
+                              <span className="text-orange-300">Cache Write:</span>
+                              <span className="font-medium text-orange-300">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                            </div>
+                            <div className="flex justify-between">
                               <span className="text-green-300">Output Tokens:</span>
                               <span className="font-medium text-green-300">{formatTokens(row.tokenBreakdown.output)}</span>
                             </div>
-                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                              <span className="text-orange-300">Cache Write:</span>
-                              <span className="font-medium text-orange-300">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 font-semibold">
+                              <span className="text-gray-200">I/O Subtotal:</span>
+                              <span className="font-medium text-gray-200">{formatTokens(totalInputTokens + row.tokenBreakdown.output)}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-purple-300">Cache Read:</span>
@@ -294,6 +357,11 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                           <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-700">
                             💡 Cache tokens are less expensive
                           </div>
+                        </HoverPopover>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">{formatTokens(0)}</span>
+                          <span className="text-xs text-text-secondary">tokens</span>
                         </div>
                       )}
                     </td>
@@ -303,35 +371,43 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                         <span className="text-xs text-text-secondary">tokens</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-text-primary group/total relative">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-lg">{formatTokens(row.tokens)}</span>
-                        <span className="text-xs text-text-secondary">tokens</span>
-                        {hasTokenBreakdown && row.tokenBreakdown && (
-                          <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                      </div>
-                      {hasTokenBreakdown && row.tokenBreakdown && (
-                        <div className="invisible group-hover/total:visible absolute left-0 top-full mt-1 z-50 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl w-80">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-text-primary">
+                      {hasTokenBreakdown && row.tokenBreakdown ? (
+                        <HoverPopover
+                          trigger={(
+                            <span className="inline-flex items-center gap-2">
+                              <span className="text-lg">{formatTokens(row.tokens)}</span>
+                              <span className="text-xs text-text-secondary">tokens</span>
+                              <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </span>
+                          )}
+                          side="top"
+                          align="start"
+                          contentClassName="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl w-80"
+                        >
                           <div className="font-semibold mb-2 text-primary-300">Complete Token Breakdown</div>
                           <div className="space-y-1">
                             <div className="flex justify-between text-blue-200">
-                              <span>Input (w/ Cache Write):</span>
-                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                              <span>Input Tokens (Total):</span>
+                              <span className="font-medium">{formatTokens(totalInputTokens)}</span>
                             </div>
-                            <div className="flex justify-between text-blue-200">
-                              <span>Input (w/o Cache Write):</span>
+                            <div className="flex justify-between text-gray-200/90">
+                              <span>Input (w/o cache write):</span>
                               <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithoutCacheWrite)}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
+                              <span>Cache Write:</span>
+                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
                             </div>
                             <div className="flex justify-between text-green-200">
                               <span>Output Tokens:</span>
                               <span className="font-medium">{formatTokens(row.tokenBreakdown.output)}</span>
                             </div>
-                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-orange-200">
-                              <span>Cache Write:</span>
-                              <span className="font-medium">{formatTokens(row.tokenBreakdown.inputWithCacheWrite)}</span>
+                            <div className="flex justify-between border-t border-gray-700 pt-1 mt-1 text-gray-200 font-semibold">
+                              <span>I/O Subtotal:</span>
+                              <span className="font-medium">{formatTokens(totalInputTokens + row.tokenBreakdown.output)}</span>
                             </div>
                             <div className="flex justify-between text-purple-200">
                               <span>Cache Read:</span>
@@ -343,8 +419,13 @@ export default function CursorCostsTable({ data }: CursorCostsTableProps) {
                             </div>
                           </div>
                           <div className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-700">
-                            💡 I/O: {formatTokens(totalInputTokens + outputTokens)} | Cache Write: {formatTokens(row.tokenBreakdown.inputWithCacheWrite)} | Cache Read: {formatTokens(row.tokenBreakdown.cacheRead)}
+                            💡 I/O: {formatTokens(totalInputTokens + row.tokenBreakdown.output)} | Cache Write: {formatTokens(row.tokenBreakdown.inputWithCacheWrite)} | Cache Read: {formatTokens(row.tokenBreakdown.cacheRead)}
                           </div>
+                        </HoverPopover>
+                      ) : (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">{formatTokens(row.tokens)}</span>
+                          <span className="text-xs text-text-secondary">tokens</span>
                         </div>
                       )}
                     </td>

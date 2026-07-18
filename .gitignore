@@ -72,6 +72,11 @@ typings/
 .env.development.local
 .env.test.local
 .env.production.local
+.env*.local
+**/.env.local
+**/.env*.local
+.env.local.TEMPLATE
+**/.env.local.TEMPLATE
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -133,3 +138,10 @@ Thumbs.db
 
 # env
 functions/.env
+
+# Stripe configuration (local only)
+.stripe-price-mapping.txt
+stripe-*.log
+
+# Firebase configuration
+aicoder-guru-firebase-adminsdk-fbsvc-0d97d14d41.json

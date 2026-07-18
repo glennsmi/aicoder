@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* Theme Configuration */
+@theme {
+  /* Brand Colors - AICoder.guru Palette */
+  /* Primary - Orange (F75C03) - CTAs, highlights, focus */
+  --color-primary-50: #fff5f0;
+  --color-primary-100: #ffe6d9;
+  --color-primary-200: #ffcdb3;
+  --color-primary-300: #ffab80;
+  --color-primary-400: #ff7d3d;
+  --color-primary-500: #F75C03;
+  --color-primary-600: #E54F02;
+  --color-primary-700: #C94302;
+  --color-primary-800: #9A3401;
+  --color-primary-900: #6B2301;
+
+  /* Secondary - Midnight Green (124C5A) - backgrounds, depth */
+  --color-secondary-50: #f0f5f6;
+  --color-secondary-100: #dce8eb;
+  --color-secondary-200: #b8d0d6;
+  --color-secondary-300: #8fb4bd;
+  --color-secondary-400: #4d8594;
+  --color-secondary-500: #124C5A;
+  --color-secondary-600: #0f4250;
+  --color-secondary-700: #0d3844;
+  --color-secondary-800: #0a2e38;
+  --color-secondary-900: #08242c;
+  --color-secondary-950: #051a20;
+
+  /* Text/Sand - Soft Sand (F2E8CF) - typography, light backgrounds */
+  --color-sand-50: #fdfcfa;
+  --color-sand-100: #faf6ed;
+  --color-sand-200: #f7f1e0;
+  --color-sand-300: #F2E8CF;
+  --color-sand-400: #ead9b3;
+  --color-sand-500: #ddc794;
+  --color-sand-600: #c9ad73;
+  --color-sand-700: #a88e5a;
+  --color-sand-800: #7d6943;
+  --color-sand-900: #584a30;
+
+  /* Accent - Soft Jade Green (64BFA4) - complementary highlights */
+  --color-accent-50: #f0faf7;
+  --color-accent-100: #dcf3ec;
+  --color-accent-200: #b9e7d9;
+  --color-accent-300: #8dd7c1;
+  --color-accent-400: #64BFA4;
+  --color-accent-500: #4eab90;
+  --color-accent-600: #3d8a75;
+  --color-accent-700: #336e5f;
+  --color-accent-800: #2d584e;
+  --color-accent-900: #284942;
+
+  /* Neutrals for UI elements */
+  --color-neutral-50: #F8FAFA;
+  --color-neutral-200: #D7DFE2;
+  --color-neutral-500: #6B7D82;
+  --color-neutral-700: #243338;
+  --color-neutral-900: #0F1A1C;
+
+  /* Font Family */
+  --font-family-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Base Styles */
+:root {
+  font-family: var(--font-family-sans);
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Light Mode - Soft Sand Background */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #F2E8CF; /* sand-300 - soft sand */
+  color: #0F1A1C; /* neutral-900 - dark text */
+}
+
+/* Dark Mode - Midnight Green Background */
+html.dark body {
+  background-color: #124C5A; /* secondary-500 - midnight green */
+  color: #F2E8CF; /* sand-300 - soft sand text */
+}
+
+#root {
+  min-height: 100vh;
+}

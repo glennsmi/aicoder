@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// DEVELOPMENT RULES - DO NOT USE IN PRODUCTION
+// These rules allow authenticated users to create their organizations and user documents
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // ===== ORGANIZATIONS ===== 
+    match /organizations/{orgId} {
+      // Allow authenticated users to read and write organizations
+      allow read, write: if isAuthenticated();
+      
+      match /members/{userId} {
+        allow read, write: if isAuthenticated();
+      }
+      
+      match /teams/{teamId} {
+        allow read, write: if isAuthenticated();
+      }
+      
+      match /apiConnections/{connectionId} {
+        allow read, write: if isAuthenticated();
+      }
+      
+      match /usage/{usageId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      // Org-scoped unified usage events (token-based)
+      match /usageEvents/{eventId} {
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+        allow write, create, update, delete: if false;
+      }
+    }
+    
+    // ===== SUBSCRIPTIONS =====
+    match /subscriptions/{orgId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // ===== INVITATIONS =====
+    match /invitations/{inviteId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if false;
+    }
+    
+    // ===== USERS =====
+    match /users/{userId} {
+      allow read, write: if isAuthenticated();
+      
+      match /rawUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+      
+      match /aggregatedUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+      
+      match /enhancedRawUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+      
+      match /enhancedAggregatedUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+      
+      match /cursorUsage/{usageId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // ===== UNIFIED USAGE EVENTS (token-based, authoritative) =====
+      match /usageEvents/{eventId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // Import guard docs written by Functions (and optionally readable by client)
+      match /usageEventImports/{importId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+    }
+    
+    // ===== CURRENCY RATES =====
+    match /currencyRates/{currencyCode} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
+    // ===== SYNC HISTORY =====
+    match /syncHistory/{syncId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}
+

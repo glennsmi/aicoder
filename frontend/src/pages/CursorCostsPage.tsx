@@ -1,50 +1,133 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
+// import { useNavigate } from 'react-router-dom' // Not currently used
 import { useAuth } from '../contexts/AuthContext'
+// import { useOrganization } from '../contexts/OrganizationContext' // Not currently used
 import { useTheme } from '../contexts/ThemeContext'
 import { useUserUsageData } from '../hooks/useUserUsageData'
 import CSVImport from '@/components/CSVImport'
 import CursorUsageChart from '@/components/CursorUsageChart'
 import AuthModal from '@/components/AuthModal'
-import AccountSettingsModal from '@/components/AccountSettingsModal'
 import CurrencySelector from '@/components/CurrencySelector'
 import ConfirmationModal from '@/components/ConfirmationModal'
-import ThemeToggle from '@/components/ThemeToggle'
 import AdminPage from './AdminPage'
-import AboutPage from './AboutPage'
+import AboutModal from '@/components/AboutModal'
 import { useCurrency } from '../hooks/useCurrency'
 import { CursorUsageV2, CursorUsageImportSummary } from '@shared'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '@/config/firebaseApp'
+import { getUserAnySavedUsageV2 } from '@/lib/usageEvents'
+
+const usageRowMergeKey = (row: CursorUsageV2): string => {
+  const tb = row.tokenBreakdown
+  return [
+    String(row.timestamp),
+    String(row.model || ''),
+    String(row.expandedModelName || ''),
+    String(row.source || ''),
+    String(row.tokens || 0),
+    String(row.costUsd ?? ''),
+    String(tb?.inputWithCacheWrite ?? ''),
+    String(tb?.inputWithoutCacheWrite ?? ''),
+    String(tb?.cacheRead ?? ''),
+    String(tb?.output ?? ''),
+    String(tb?.total ?? ''),
+  ].join('|')
+}
 
 
 export default function CursorCostsPage() {
+  // const navigate = useNavigate() // Commented out - not currently used
   const { currentUser } = useAuth()
+  // const { organization } = useOrganization() // Commented out - not currently used
   const { actualTheme } = useTheme()
   const { 
     loading, 
     error, 
-    stats,
-    deduplicateData,
     clearError 
   } = useUserUsageData()
   const {  userCurrency, loading: currencyLoading } = useCurrency()
   
+  type MappingImportDiagnostics = {
+    source: string
+    rowsEvaluated: number
+    matchedRows: number
+    unmatchedRows: number
+    matchTypeCounts: Record<string, number>
+    unmatchedModels: Array<{
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>
+  }
+
+  type SaveResultState = {
+    saved: number
+    duplicates: number
+    errors: string[]
+    mappingDiagnostics?: MappingImportDiagnostics
+  }
+
+  const mergeMappingDiagnostics = (
+    base: MappingImportDiagnostics,
+    next: MappingImportDiagnostics
+  ): MappingImportDiagnostics => {
+    const mergedCounts: Record<string, number> = { ...base.matchTypeCounts }
+    Object.entries(next.matchTypeCounts || {}).forEach(([k, v]) => {
+      mergedCounts[k] = (mergedCounts[k] || 0) + Number(v || 0)
+    })
+
+    const unmatchedMap = new Map<string, {
+      rawModelName: string
+      canonicalSuggestion: string
+      source: string
+      occurrences: number
+    }>()
+    for (const item of [...(base.unmatchedModels || []), ...(next.unmatchedModels || [])]) {
+      const key = `${item.source}|${item.rawModelName}|${item.canonicalSuggestion}`
+      const prev = unmatchedMap.get(key)
+      if (prev) {
+        prev.occurrences += Number(item.occurrences || 0)
+      } else {
+        unmatchedMap.set(key, {
+          ...item,
+          occurrences: Number(item.occurrences || 0),
+        })
+      }
+    }
+
+    return {
+      source: base.source || next.source,
+      rowsEvaluated: Number(base.rowsEvaluated || 0) + Number(next.rowsEvaluated || 0),
+      matchedRows: Number(base.matchedRows || 0) + Number(next.matchedRows || 0),
+      unmatchedRows: Number(base.unmatchedRows || 0) + Number(next.unmatchedRows || 0),
+      matchTypeCounts: mergedCounts,
+      unmatchedModels: Array.from(unmatchedMap.values())
+        .sort((a, b) => b.occurrences - a.occurrences || a.rawModelName.localeCompare(b.rawModelName))
+        .slice(0, 25),
+    }
+  }
+
   // Debug currency state
   console.log('🎯 CursorCostsPage - userCurrency:', userCurrency, 'loading:', currencyLoading, 'currentUser:', !!currentUser)
   
   // const [tempData, setTempData] = useState<CursorUsage[]>([])
   const [pasteError, setPasteError] = useState<string | null>(null)
   const [isPasting] = useState(false)
-  const [saveResult, setSaveResult] = useState<{
-    saved: number
-    duplicates: number
-    errors: string[]
-  } | null>(null)
+  const [saveResult, setSaveResult] = useState<SaveResultState | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
-  const [showAccountSettings, setShowAccountSettings] = useState(false)
+  const [authMode] = useState<'login' | 'signup'>('login')
   const [showCurrencySelector, setShowCurrencySelector] = useState(false)
-  const [currentPage, setCurrentPage] = useState<'main' | 'admin' | 'about'>('main')
+  const [currentPage, setCurrentPage] = useState<'main' | 'admin'>('main')
+  const [showAboutModal, setShowAboutModal] = useState(false)
+  const isSuperAdmin = Boolean(
+    currentUser?.email && ['glenn@aicoder.guru', 'glenn@fueld.ai'].includes(currentUser.email)
+  )
 
   const [tempDataV2, setTempDataV2] = useState<CursorUsageV2[]>([])
+  const [isSavingUsageEvents, setIsSavingUsageEvents] = useState(false)
+  const [isLoadingSavedEvents, setIsLoadingSavedEvents] = useState(false)
+  const [loadedSource, setLoadedSource] = useState<string | null>(null)
 
   // Show the uploaded tokens data immediately for both guests and logged-in users
   const displayDataV2 = tempDataV2
@@ -63,7 +146,7 @@ export default function CursorCostsPage() {
   })
 
   // Check if user is admin
-  const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai'
+  // const isAdmin = currentUser && currentUser.email === 'glenn@fueld.ai' // Commented out - not currently used
 
   // Function to handle Paste Data click - scrolls to import section and triggers paste
   const importSectionRef = useRef<HTMLDivElement>(null);
@@ -73,22 +156,237 @@ export default function CursorCostsPage() {
 
 
 
-  // New: handle tokens-based CSV import (tokens-only flow)
-const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImportSummary) => {
+  const loadSavedEvents = async () => {
+    if (!currentUser?.uid) return
+    try {
+      setIsLoadingSavedEvents(true)
+      // Prefer canonical `usageEvents`, but fall back to legacy collections if that's where the data lives.
+      // First, load a small sample to determine the latest timestamp and the source.
+      const latest = await getUserAnySavedUsageV2(currentUser.uid, { limitCount: 1 })
+      setLoadedSource(latest.source)
+      if (latest.rows.length === 0) return
+
+      const latestMs = typeof latest.rows[0]?.timestamp === 'number' ? latest.rows[0].timestamp : Date.now()
+      const days = 365
+      const startMs = latestMs - days * 24 * 60 * 60 * 1000
+
+      const full = await getUserAnySavedUsageV2(currentUser.uid, { startMs, limitCount: 10000 })
+      setLoadedSource(full.source)
+      if (full.rows.length > 0) {
+        setTempDataV2(full.rows)
+      }
+    } catch (e) {
+      console.error('Failed to load saved usage events:', e)
+      // Surface a user-friendly message (often permissions/rules-related).
+      setPasteError('Could not load your saved usage yet. If this persists, refresh the page.')
+    } finally {
+      setIsLoadingSavedEvents(false)
+    }
+  }
+
+  // Initial load from saved data for authenticated users
+  // (keeps charts persistent across refreshes/sessions)
+  useEffect(() => {
+    if (currentUser?.uid) {
+      void loadSavedEvents()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.uid])
+
+  // New: handle tokens-based Cursor CSV import (tokens-only flow)
+const handleTokensImport = async (
+  rows: CursorUsageV2[],
+  summary: CursorUsageImportSummary,
+  fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+) => {
   console.log('🎯 CursorCostsPage: handleTokensImport called with', rows.length, 'rows and summary:', summary)
   console.log('🎯 CursorCostsPage: First few rows:', rows.slice(0, 3))
+
+  // Merge new CSV rows into existing data so previously-loaded Firestore records
+  // remain visible while the background ingestion runs. Deduplicate by fingerprint
+  // (timestamp + model + tokens) to avoid double-counting.
+  setTempDataV2((prev) => {
+    if (prev.length === 0) return rows
+
+    const existing = new Map<string, CursorUsageV2>()
+    for (const r of prev) {
+      const key = usageRowMergeKey(r)
+      existing.set(key, r)
+    }
+    // New rows overwrite existing duplicates (fresher parse)
+    for (const r of rows) {
+      const key = usageRowMergeKey(r)
+      existing.set(key, r)
+    }
+    const merged = Array.from(existing.values())
+    merged.sort((a, b) => a.timestamp - b.timestamp)
+    return merged
+  })
   
   if (currentUser) {
-    // TODO: once backend updated, save tokens-only rows; for now, just display
-    console.log('👤 CursorCostsPage: User is logged in, setting temp data for display')
-    setTempDataV2(rows)
+    try {
+      console.log('👤 CursorCostsPage: User is logged in, ingesting usage events...')
+      setSaveResult(null)
+      clearError()
+      setPasteError(null)
+      setIsSavingUsageEvents(true)
+
+      const importId = `cursor_csv_${Date.now()}`
+      const ingest = httpsCallable(functions, 'ingestUsageEventsFromCursorCsv')
+
+      // Chunk to avoid callable payload limits
+      const chunkSize = 2000
+      let saved = 0
+      let duplicates = 0
+      const errors: string[] = []
+      let mappingDiagnostics: MappingImportDiagnostics | null = null
+
+      // Run the save in the background; do not block the UI thread.
+      void (async () => {
+        try {
+          const batches = (fileBatches && fileBatches.length > 0)
+            ? fileBatches
+            : [{ fileName: 'cursor.csv', fileHash: '', rows }]
+
+          for (const batch of batches) {
+            // Send newest rows first so the most recent (likely unique) data is
+            // persisted even if later chunks hit a timeout or transient error.
+            // Rows are sorted ascending, so we chunk from the end backwards.
+            const total = batch.rows.length
+            for (let end = total; end > 0; end -= chunkSize) {
+              const start = Math.max(0, end - chunkSize)
+              const chunk = batch.rows.slice(start, end)
+
+              const result = await ingest({
+                importId,
+                fileName: batch.fileName,
+                ...(batch.fileHash ? { fileHash: batch.fileHash } : {}),
+                rows: chunk,
+              })
+
+              const data = result.data as any
+              saved += Number(data?.saved || 0)
+              duplicates += Number(data?.duplicates || 0)
+              if (data?.mappingDiagnostics) {
+                const incoming = data.mappingDiagnostics as MappingImportDiagnostics
+                mappingDiagnostics = mappingDiagnostics
+                  ? mergeMappingDiagnostics(mappingDiagnostics, incoming)
+                  : incoming
+              }
+            }
+          }
+
+          setSaveResult({ saved, duplicates, errors, ...(mappingDiagnostics ? { mappingDiagnostics } : {}) })
+          // Refresh the UI from Firestore so we are charting persisted stitched data.
+          await loadSavedEvents()
+        } catch (e: any) {
+          console.error('Failed to ingest usage events:', e)
+          setPasteError(e?.message || 'Failed to save your usage data. Please try again.')
+        } finally {
+          setIsSavingUsageEvents(false)
+        }
+      })()
+    } catch (e: any) {
+      console.error('Failed to ingest usage events:', e)
+      setPasteError(e?.message || 'Failed to save your usage data. Please try again.')
+      setIsSavingUsageEvents(false)
+    }
   } else {
     console.log('👤 CursorCostsPage: User is guest, setting temp data for display')
-    setTempDataV2(rows)
   }
   
   console.log('✅ CursorCostsPage: tempDataV2 state updated, should trigger re-render')
 }
+
+  // New: handle Claude Code usage import via ccusage JSON (daily report)
+  const handleCcusageDailyImport = async (
+    rows: CursorUsageV2[],
+    summary: CursorUsageImportSummary,
+    fileBatches?: Array<{ fileName: string; fileHash: string; rows: CursorUsageV2[] }>
+  ) => {
+    console.log('🎯 CursorCostsPage: handleCcusageDailyImport called with', rows.length, 'rows and summary:', summary)
+
+    // Merge new rows into existing data (same logic as handleTokensImport)
+    setTempDataV2((prev) => {
+      if (prev.length === 0) return rows
+
+      const existing = new Map<string, CursorUsageV2>()
+      for (const r of prev) {
+        const key = usageRowMergeKey(r)
+        existing.set(key, r)
+      }
+      for (const r of rows) {
+        const key = usageRowMergeKey(r)
+        existing.set(key, r)
+      }
+      const merged = Array.from(existing.values())
+      merged.sort((a, b) => a.timestamp - b.timestamp)
+      return merged
+    })
+
+    if (!currentUser) return
+
+    try {
+      setSaveResult(null)
+      clearError()
+      setPasteError(null)
+      setIsSavingUsageEvents(true)
+
+      const importId = `ccusage_daily_${Date.now()}`
+      const ingest = httpsCallable(functions, 'ingestUsageEventsFromCcusageDailyJson')
+      const chunkSize = 2000
+
+      let saved = 0
+      let duplicates = 0
+      const errors: string[] = []
+      let mappingDiagnostics: MappingImportDiagnostics | null = null
+
+      void (async () => {
+        try {
+          const batches = (fileBatches && fileBatches.length > 0)
+            ? fileBatches
+            : [{ fileName: 'ccusage.json', fileHash: '', rows }]
+
+          for (const batch of batches) {
+            // Newest rows first (same rationale as cursor CSV import)
+            const total = batch.rows.length
+            for (let end = total; end > 0; end -= chunkSize) {
+              const start = Math.max(0, end - chunkSize)
+              const chunk = batch.rows.slice(start, end)
+
+              const result = await ingest({
+                importId,
+                fileName: batch.fileName,
+                ...(batch.fileHash ? { fileHash: batch.fileHash } : {}),
+                rows: chunk,
+              })
+              const data = result.data as any
+              saved += Number(data?.saved || 0)
+              duplicates += Number(data?.duplicates || 0)
+              if (data?.mappingDiagnostics) {
+                const incoming = data.mappingDiagnostics as MappingImportDiagnostics
+                mappingDiagnostics = mappingDiagnostics
+                  ? mergeMappingDiagnostics(mappingDiagnostics, incoming)
+                  : incoming
+              }
+            }
+          }
+
+          setSaveResult({ saved, duplicates, errors, ...(mappingDiagnostics ? { mappingDiagnostics } : {}) })
+          await loadSavedEvents()
+        } catch (e: any) {
+          console.error('Failed to ingest ccusage daily usage events:', e)
+          setPasteError(e?.message || 'Failed to save your Claude Code usage data. Please try again.')
+        } finally {
+          setIsSavingUsageEvents(false)
+        }
+      })()
+    } catch (e: any) {
+      console.error('Failed to ingest ccusage daily usage events:', e)
+      setPasteError(e?.message || 'Failed to save your Claude Code usage data. Please try again.')
+      setIsSavingUsageEvents(false)
+    }
+  }
 
   const handleClear = () => {
     if (currentUser) {
@@ -114,10 +412,10 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
     setShowConfirmModal(true)
   }
 
-  const openAuthModal = (mode: 'login' | 'signup') => {
-    setAuthMode(mode)
-    setShowAuthModal(true)
-  }
+  // Removed - navigate to /login instead
+  // const openAuthModal = (_mode: 'login' | 'signup') => {
+  //   // Navigate to login page instead
+  // }
 
   // CSV Download Functions
   /*
@@ -180,153 +478,51 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
     return <AdminPage onBackToMain={() => setCurrentPage('main')} />
   }
 
-  // Render about page if selected
-  if (currentPage === 'about') {
-    return <AboutPage onBackToMain={() => setCurrentPage('main')} />
-  }
+  // About modal is now rendered at the bottom of the component
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 text-gunmetal dark:text-gray-100 transition-colors duration-200">
+    <div className="min-h-screen bg-gray-50 dark:bg-secondary-800 text-neutral-900 dark:text-gray-100 transition-colors duration-200">
       {/* Hero Section */}
-      <div className="bg-secondary-800 dark:bg-gray-800 p-4 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2 -mt-4">
-              <div className="flex flex-row items-center justify-between w-full">
-                <div className="flex flex-row items-top">
-                  {/* Fueld Logo Symbol - conditional based on theme */}
-                  {actualTheme === 'dark' ? (
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mr-4 shadow-lg">
-                      <img src="/logos/Logo-midnight-greeen.svg" alt="Fueld" className="w-16 h-16" />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mr-4 shadow-lg">
-                      <img src="/logos/fueld-logo-symbol.svg" alt="Fueld" className="w-10 h-10" />
-                    </div>
-                  )}
-                  <div className="text-left">
-                    <h1 className="text-3xl font-bold text-white">Cursor Costs Tracker</h1>
-                    <p className="text-sm text-white/70 mt-1">
-                      by <a href="https://go.fueld.ai/4kkKxYj" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Fueld AI</a>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-row items-center pt-4 ml-10">
-                  {/* Auth Buttons for Guests */}
-                  {!currentUser ? (
-                    <>
-                      <div className="flex items-center justify-center gap-4 mb-4">
-                        {isAdmin && (
-                          <button 
-                            onClick={() => setCurrentPage('admin')}
-                            className="bg-orange-500/20 text-white px-6 py-2 rounded-xl font-semibold hover:bg-orange-500/30 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 backdrop-blur-sm border border-orange-400/30"
-                          >
-                            Admin
-                          </button>
-                        )}
-                                            <button 
-                      onClick={() => setCurrentPage('about')}
-                      className="bg-white/10 text-white px-6 py-2 rounded-xl font-semibold hover:bg-white/20 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 backdrop-blur-sm border border-white/20"
-                    >
-                      About
-                    </button>
-
-                        <button 
-                          onClick={() => openAuthModal('login')}
-                          className="bg-white text-gunmetal px-6 py-2 rounded-xl font-semibold hover:bg-gray-50 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 dark:bg-white dark:text-black"
-                        >
-                          Sign In
-                        </button>
-                        <button 
-                          onClick={() => openAuthModal('signup')}
-                          className="bg-primary-500 text-gunmetal px-6 py-2 rounded-xl font-semibold hover:bg-primary-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-                        >
-                          Sign Up
-                        </button>
-                      </div>
-
-                     
-                      
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="mb-4">
-                          <div className="flex items-center gap-4">
-                            
-                            {/* Account Actions */}
-                            <div className="flex items-center gap-2">
-                              {isAdmin && (
-                                <button 
-                                  onClick={() => setCurrentPage('admin')}
-                                  className="inline-flex items-center px-4 py-2 bg-orange-500/20 text-white rounded-lg hover:bg-orange-500/30 transition-all duration-200 backdrop-blur-sm border border-orange-400/30"
-                                  title="Admin Panel"
-                                >
-                                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                                  </svg>
-                                  Admin
-                                </button>
-                              )}
-                              
-                              <button 
-                                onClick={() => setCurrentPage('about')}
-                                className="inline-flex items-center px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-all duration-200 backdrop-blur-sm border border-white/20"
-                                title="About Fueld"
-                              >
-                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                About
-                              </button>
-                              
-                              
-                              <button 
-                                onClick={() => setShowAccountSettings(true)}
-                                className="inline-flex items-center px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-all duration-200 backdrop-blur-sm border border-white/20"
-                                title="Account Settings"
-                              >
-                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                Settings
-                              </button>
-                            
-                            </div>
-                          </div>
-
-                          
-                        </div>
-                      </div>
-                      
-                    
-                     
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-20 max-w-3xl mx-auto">
-              <p className="text-xl text-white/90 text-center sm:text-left">
-                Professional cost tracking for Cursor AI usage with smart data aggregation and analytics
+      <div className="bg-gray-50 dark:bg-secondary-800 transition-colors duration-200">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pb-10">
+          <div className="">
+            <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4">
+              <p className="text-xl text-neutral-900 dark:text-white/90 text-left max-w-3xl">
+                Measure. Motivate. Master AI.
               </p>
-              
+
+              {/* AICoder.Guru Logo - conditional based on theme */}
+              <img
+                src={actualTheme === 'dark' ? '/logos/logo-dark.png' : '/logos/logo-light.png'}
+                alt="AICoder.Guru - Measure. Motivate. Master AI."
+                className="h-12 transition-opacity hover:opacity-90"
+              />
             </div>
-            
           </div>
         </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-2">
         
 
         {/* Stats Cards removed per latest UX – now moved to chart footer */}
 
         {/* Daily Usage Chart */}
+        {currentUser && isLoadingSavedEvents && displayDataV2.length === 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-colors duration-200">
+            <div className="flex items-center justify-center gap-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+              <div className="text-sm text-gray-700 dark:text-gray-200">
+                Checking for saved usage…
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-center text-gray-500 dark:text-gray-400">
+              If data exists, your chart will appear automatically.
+            </div>
+          </div>
+        )}
         {displayDataV2.length > 0 && (
           <div ref={chartRef}>
-            <CursorUsageChart data={displayDataV2} isLoading={isPasting} />
+            <CursorUsageChart data={displayDataV2} isLoading={isPasting || isLoadingSavedEvents} />
           </div>
         )}
 
@@ -373,10 +569,33 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
                     {saveResult.errors.length} errors occurred
                   </p>
                 )}
+                {saveResult.mappingDiagnostics && (
+                  <p className="text-green-700 dark:text-green-300 text-sm mt-1">
+                    Mapping diagnostics: {saveResult.mappingDiagnostics.matchedRows.toLocaleString()} seed matches,{' '}
+                    {saveResult.mappingDiagnostics.unmatchedRows.toLocaleString()} heuristic matches.
+                  </p>
+                )}
                 {currentUser && (
                   <p className="text-green-600 dark:text-green-400 text-sm mt-1">
                     💾 Raw data preserved • 📊 Auto-aggregated by minute for analytics
                   </p>
+                )}
+                {isSuperAdmin && saveResult.mappingDiagnostics && saveResult.mappingDiagnostics.unmatchedModels.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3">
+                    <p className="text-amber-800 dark:text-amber-200 text-sm font-medium">
+                      Unmatched model aliases detected (top {Math.min(8, saveResult.mappingDiagnostics.unmatchedModels.length)}):
+                    </p>
+                    <div className="mt-1 space-y-1">
+                      {saveResult.mappingDiagnostics.unmatchedModels.slice(0, 8).map((item) => (
+                        <p key={`${item.source}|${item.rawModelName}|${item.canonicalSuggestion}`} className="text-amber-700 dark:text-amber-300 text-xs">
+                          {item.source}: `{item.rawModelName}` → `{item.canonicalSuggestion}` ({item.occurrences})
+                        </p>
+                      ))}
+                    </div>
+                    <p className="text-amber-700 dark:text-amber-300 text-xs mt-2">
+                      Super-admin alert email sent automatically for this import.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -391,22 +610,41 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
           
           <CSVImport 
             onTokensImport={handleTokensImport}
+            onCcusageDailyImport={handleCcusageDailyImport}
             onClear={handleClear}
             hasData={displayDataV2.length > 0}
-            disabled={loading}
+            disabled={loading || isSavingUsageEvents}
           />
           
-          {loading && (
+          {(loading || isSavingUsageEvents) && (
             <div className="mt-4 flex items-center justify-center">
               <div className="flex items-center">
-                <img src="/logos/fueld-logo-symbol.svg" alt="Fueld" className="w-6 h-6 mr-3 animate-pulse" />
+                <img
+                  src="/logos/jade-guru.svg"
+                  alt="AICoder.Guru"
+                  className="w-6 h-6 mr-3 animate-pulse"
+                />
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500 mr-2"></div>
               </div>
-              <span className="text-gunmetal-900 dark:text-gray-200">
-                {currentUser ? 'Saving to your account...' : 'Processing...'}
+              <span className="text-neutral-900 dark:text-gray-200">
+                {isSavingUsageEvents ? 'Saving to your account...' : (currentUser ? 'Loading your data...' : 'Processing...')}
               </span>
             </div>
           )}
+
+          {isLoadingSavedEvents && !isSavingUsageEvents && (
+            <div className="mt-3 text-center text-sm text-gray-600 dark:text-gray-300">
+              Loading saved usage…
+            </div>
+          )}
+
+          {/* Lightweight diagnostic to confirm we found saved data and where it came from */}
+          {currentUser && !isLoadingSavedEvents && !isSavingUsageEvents && displayDataV2.length === 0 && (
+            <div className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
+              No saved usage found for this signed-in account{loadedSource ? ` (checked: ${loadedSource}).` : '.'}
+            </div>
+          )}
+
         </div>
 
          {/* Guest Mode Notice - Below Chart */}
@@ -436,105 +674,9 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
 
       
 
-        {/* Enhanced Fueld Branding Footer */}
-        <div className="mt-12 text-center">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-8 max-w-4xl mx-auto transition-colors duration-200">
-            {/* Customer Testimonials */}
-            <div className="mb-8">
-              <h3 className="text-lg font-semibold text-gunmetal-900 dark:text-white mb-6">What Our Customers Say about Fueld AI</h3>
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Quote 1 */}
-                <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-6 border border-primary-200 dark:border-primary-800 transition-colors duration-200">
-                  <div className="flex items-start space-x-2 mb-3">
-                    <svg className="w-6 h-6 text-primary-500 dark:text-primary-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h4v10h-10z"/>
-                    </svg>
-                    <div className="flex-1">
-                      <p className="text-gunmetal-900 dark:text-gray-200 font-medium text-lg leading-relaxed mb-3">
-                        "Amazing, Love the magic you are selling"
-                      </p>
-                      <div className="text-right">
-                        <p className="text-gunmetal-700 dark:text-gray-300 font-semibold">Stuart Crooks</p>
-                        <p className="text-gunmetal-500 dark:text-gray-400 text-sm">Fintech Exec</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+    
 
-                {/* Quote 2 */}
-                <div className="bg-secondary-50 dark:bg-secondary-900/20 rounded-xl p-6 border border-secondary-200 dark:border-secondary-800 transition-colors duration-200">
-                  <div className="flex items-start space-x-2 mb-3">
-                    <svg className="w-6 h-6 text-secondary-600 dark:text-secondary-400 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h4v10h-10z"/>
-                    </svg>
-                    <div className="flex-1">
-                      <p className="text-gunmetal-900 dark:text-gray-200 font-medium text-lg leading-relaxed mb-3">
-                        "That's just astonishing"
-                      </p>
-                      <div className="text-right">
-                        <p className="text-gunmetal-700 dark:text-gray-300 font-semibold">James Mayes</p>
-                        <p className="text-gunmetal-500 dark:text-gray-400 text-sm">Startup founder & CEO</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Fueld Logo and Info */}
-            <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
-              <div className="flex items-center justify-center mb-4">
-                <img src={actualTheme === 'dark' ? '/logos/fueld_logo_white.svg' : '/logos/fueld-logo-full.svg'} alt="Fueld" className="h-8" />
-              </div>
-              
-              <p className="text-sm text-gunmetal-700 dark:text-gray-300 mb-4">
-                AI powered nutrition tracking, recipe generation and analytics platform
-              </p>
-
-              <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-4 mb-6 mt-4">
-                <div className="flex items-center justify-center gap-4 text-sm">
-                  <a 
-                    href="https://go.fueld.ai/4kkKxYj" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-secondary-800 hover:text-primary-500 dark:text-gray-300 dark:hover:text-primary-400 font-medium transition-colors"
-                  >
-                    Visit Fueld.ai
-                  </a>
-                  <span className="w-1 h-1 bg-gunmetal-300 dark:bg-gray-500 rounded-full"></span>
-                  <a 
-                    href="http://localhost:5176/forindividuals?promoCode=Cursor1MFree" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-secondary-800 hover:text-primary-500 dark:text-gray-300 dark:hover:text-primary-400 font-medium transition-colors"
-                  >
-                    Get the App
-                  </a>
-                  <span className="w-1 h-1 bg-gunmetal-300 dark:bg-gray-500 rounded-full"></span>
-                  <button 
-                    onClick={() => setCurrentPage('about')}
-                    className="text-secondary-800 hover:text-primary-500 dark:text-gray-300 dark:hover:text-primary-400 font-medium transition-colors"
-                  >
-                    About
-                  </button>
-                  <span className="w-1 h-1 bg-gunmetal-300 dark:bg-gray-500 rounded-full"></span>
-                  <a
-                    href="http://localhost:5176/forindividuals?promoCode=Cursor1MFree"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-[#F75C03] hover:bg-[#F75C03]/80 text-white font-semibold px-4 py-1.5 rounded-md transition-colors"
-                  >
-                    1 Month Free
-                  </a>
-                </div>
-
-                <div className="flex flex-row items-center">
-                  <ThemeToggle />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Auth Modal */}
@@ -544,13 +686,7 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
         initialMode={authMode}
       />
 
-      {/* Account Settings Modal */}
-                <AccountSettingsModal 
-            isOpen={showAccountSettings} 
-            onClose={() => setShowAccountSettings(false)}
-            stats={stats}
-            onDeduplicate={deduplicateData}
-          />
+      {/* Account Settings Modal - Removed */}
 
       {/* Currency Selector */}
       <CurrencySelector
@@ -566,6 +702,12 @@ const handleTokensImport = async (rows: CursorUsageV2[], summary: CursorUsageImp
         message={confirmModalProps.message}
         onConfirm={confirmModalProps.onConfirm}
         confirmText={confirmModalProps.confirmText}
+      />
+
+      {/* About Modal */}
+      <AboutModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
       />
     </div>
   </div>

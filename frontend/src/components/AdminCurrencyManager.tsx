@@ -4,7 +4,7 @@ import { collection, getDocs, doc, setDoc } from 'firebase/firestore'
 import { CurrencyRate, SUPPORTED_CURRENCIES } from '@shared'
 import { useAuth } from '../contexts/AuthContext'
 
-const ADMIN_EMAILS = ['glenn@fueld.ai'] // Replace with actual admin emails
+const ADMIN_EMAILS = ['glenn@aicoder.guru'] // Replace with actual admin emails
 
 // Mapping from currency names to codes
 const CURRENCY_NAME_TO_CODE: Record<string, string> = {

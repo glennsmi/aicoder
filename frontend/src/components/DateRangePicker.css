@@ -92,7 +92,15 @@
 }
 
 .rdp-nav_button:hover {
-  background-color: #f1f5f9;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+:is(.dark) .rdp-nav_button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+:is(.dark) .rdp-nav_button {
+  border-color: #4b5563;
 }
 
 .rdp-nav_button:focus {
@@ -117,6 +125,10 @@
   height: var(--rdp-cell-size);
   padding: 0;
   color: #64748b;
+}
+
+:is(.dark) .rdp-head_cell {
+  color: #94a3b8;
 }
 
 .rdp-tbody {
@@ -157,7 +169,11 @@
 }
 
 .rdp-button:hover {
-  background-color: #f1f5f9;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+:is(.dark) .rdp-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .rdp-button:focus {
@@ -165,17 +181,7 @@
 }
 
 .rdp-day_today {
-  font-weight: 500;
-  background-color: #f1f5f9;
-}
-
-.rdp-day_selected {
-  background-color: var(--rdp-accent-color);
-  color: white;
-}
-
-.rdp-day_selected:hover {
-  background-color: var(--rdp-accent-color-dark);
+  font-weight: 600;
 }
 
 .rdp-day_outside {
@@ -187,16 +193,22 @@
   cursor: not-allowed;
 }
 
-.rdp-day_range_middle {
-  background-color: var(--rdp-background-color);
+/* Dark-mode range readability fallback for react-day-picker v8/v9 class names */
+:is(.dark) .rdp .rdp-range_middle,
+:is(.dark) .rdp .rdp-day_range_middle {
+  background-color: rgba(14, 165, 233, 0.22);
 }
 
-.rdp-day_range_start {
-  background-color: var(--rdp-accent-color);
-  color: white;
+:is(.dark) .rdp .rdp-range_middle .rdp-day_button,
+:is(.dark) .rdp .rdp-day_range_middle {
+  color: #f1f5f9;
 }
 
-.rdp-day_range_end {
-  background-color: var(--rdp-accent-color);
-  color: white;
-} 
+:is(.dark) .rdp .rdp-range_start .rdp-day_button,
+:is(.dark) .rdp .rdp-range_end .rdp-day_button,
+:is(.dark) .rdp .rdp-day_range_start,
+:is(.dark) .rdp .rdp-day_range_end,
+:is(.dark) .rdp .rdp-day_selected {
+  background-color: #0ea5e9;
+  color: #ffffff;
+}

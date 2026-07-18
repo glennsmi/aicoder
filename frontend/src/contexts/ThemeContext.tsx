@@ -17,7 +17,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
     }
-    return 'light'
+    return 'dark' // Default to dark
   }
 
   // Calculate actual theme based on preference
@@ -28,20 +28,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return themePreference
   }
 
-  // Initialize with saved theme or default to light
+  // Initialize with saved theme or default to dark
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
-      return (localStorage.getItem('theme') as Theme) || 'light'
+      return (localStorage.getItem('theme') as Theme) || 'dark'
     }
-    return 'light'
+    return 'dark'
   })
 
   const [actualTheme, setActualTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      const savedTheme = (localStorage.getItem('theme') as Theme) || 'light'
+      const savedTheme = (localStorage.getItem('theme') as Theme) || 'dark'
       return calculateActualTheme(savedTheme)
     }
-    return 'light'
+    return 'dark'
   })
 
   // Apply theme to document immediately

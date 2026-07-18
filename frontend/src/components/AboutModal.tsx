@@ -8,16 +8,16 @@ export default function AboutModal({ isOpen, onClose }: AboutModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gunmetal-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-secondary-800 text-white rounded-t-xl">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gunmetal-700 bg-secondary-800 text-white rounded-t-xl">
           <div className="flex items-center">
-            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mr-4">
-              <img src="/logos/fueld-logo-symbol.svg" alt="Fueld" className="w-8 h-8" />
+            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mr-4 p-2">
+              <img src="/logos/jade-guru.svg" alt="AICoder.Guru" className="w-full h-full" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">The Fueld Platform</h2>
-              <p className="text-white/80 text-sm">Next-generation nutritional research</p>
+              <h2 className="text-2xl font-bold text-white">AICoder.Guru</h2>
+              <p className="text-white/80 text-sm">Measure. Motivate. Master AI.</p>
             </div>
           </div>
           <button
@@ -34,162 +34,150 @@ export default function AboutModal({ isOpen, onClose }: AboutModalProps) {
         <div className="p-8 space-y-8">
           {/* Introduction */}
           <div>
-            <h3 className="text-2xl font-bold text-gunmetal-900 mb-4">Introduction</h3>
-            <p className="text-gunmetal-700 mb-4 text-lg leading-relaxed">
-              <strong>Fueld is a unified platform for next-generation nutritional research.</strong>
+            <h3 className="text-2xl font-bold text-gunmetal-900 dark:text-white mb-4">About AICoder.Guru</h3>
+            <p className="text-gunmetal-700 dark:text-sand-300 mb-4 text-lg leading-relaxed">
+              <strong>AICoder.Guru is the comprehensive AI coding analytics platform</strong> that helps development teams track, analyze, and optimize their AI tool usage.
             </p>
-            <p className="text-gunmetal-700 mb-4 leading-relaxed">
-              At its core are two seamlessly integrated tools: the <strong>Fueld App</strong>, a powerful AI-driven mobile experience for effortless meal 
-              logging by participants, and the <strong>Fueld Portal</strong>, an advanced web platform that gives researchers unprecedented insight into 
-              dietary behavior.
+            <p className="text-gunmetal-700 dark:text-sand-300 mb-4 leading-relaxed">
+              Born from the need for accurate analysis of AI coding costs, AICoder.Guru started as an internal tool and evolved into a full-featured platform. We believe that <strong>visibility drives adoption</strong>—when teams can see the impact of AI coding tools, they use them more effectively.
             </p>
-            <p className="text-gunmetal-700 mb-4 leading-relaxed">
-              Participants simply capture a photo of their meals with the Fueld App. The app automatically analyses the contents, breaks 
-              down macronutrients, and logs dietary patterns—all with minimal effort. Meanwhile, researchers and clinicians access this rich 
-              data through the portal, where they can manage participants, analyse trends, track targets, and generate powerful AI-
-              supported nutritional reports.
-            </p>
-            <p className="text-gunmetal-700 leading-relaxed">
-              Together, these tools create a complete, elegant workflow for nutritional data collection and analysis—from <strong>meal to insight</strong>.
+            <p className="text-gunmetal-700 dark:text-sand-300 leading-relaxed">
+              Our mission is to help managers and developers make data-driven decisions about AI tool adoption, understand costs, and maximize productivity through better insights.
             </p>
           </div>
 
-          {/* The Fueld App */}
-          <div className="grid md:grid-cols-2 gap-8 items-center">
-            <div>
-              <h3 className="text-2xl font-bold text-gunmetal-900 mb-4">The Fueld App</h3>
-              <p className="text-gunmetal-700 mb-4 leading-relaxed">
-                The Fueld App transforms food tracking with the power of AI. Instead of typing in ingredients or scanning barcodes, 
-                participants simply <strong>take a photo of each meal</strong>. The app's advanced AI models analyse the image to:
-              </p>
-              <ul className="text-gunmetal-700 space-y-2 mb-4">
-                <li className="flex items-start">
-                  <span className="w-2 h-2 bg-primary-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                  Identify individual ingredients
-                </li>
-                <li className="flex items-start">
-                  <span className="w-2 h-2 bg-primary-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                  Estimate portion sizes and weights
-                </li>
-                <li className="flex items-start">
-                  <span className="w-2 h-2 bg-primary-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                  Accurately calculate nutritional values to each component
-                </li>
-                <li className="flex items-start">
-                  <span className="w-2 h-2 bg-primary-500 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                  Automatically log the meal into the participant's food diary
-                </li>
-              </ul>
-              <p className="text-gunmetal-700 leading-relaxed">
-                While nutritional estimates may not be perfect, the simplicity of the process means users are far more likely to 
-                <strong> consistently capture their meals</strong>. This results in high-quality datasets that combine <strong>ease of use with practical 
-                accuracy</strong>—the foundation for powerful dietary analysis.
-              </p>
-            </div>
-            <div className="flex items-center justify-center">
-              <div className="bg-primary-50 rounded-2xl p-8 border border-primary-200">
-                <div className="flex space-x-4">
-                  <div className="w-32 h-56 bg-gunmetal-900 rounded-2xl flex items-center justify-center">
-                    <span className="text-white text-xs">📱 App Interface</span>
+          {/* Key Features */}
+          <div>
+            <h3 className="text-2xl font-bold text-gunmetal-900 dark:text-white mb-4">Key Features</h3>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-6 border border-neutral-200 dark:border-gunmetal-700">
+                <div className="flex items-center mb-3">
+                  <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
                   </div>
-                  <div className="w-32 h-56 bg-secondary-800 rounded-2xl flex items-center justify-center">
-                    <span className="text-white text-xs">🍽️ Meal Analysis</span>
-                  </div>
+                  <h4 className="font-semibold text-gunmetal-900 dark:text-white">Usage Analytics</h4>
                 </div>
+                <p className="text-gunmetal-700 dark:text-sand-300 text-sm leading-relaxed">
+                  Track token usage, costs, and trends across all your AI coding tools. Visualize data with interactive charts and detailed breakdowns.
+                </p>
+              </div>
+
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-6 border border-neutral-200 dark:border-gunmetal-700">
+                <div className="flex items-center mb-3">
+                  <div className="w-10 h-10 bg-accent-400 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-6 h-6 text-gunmetal-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <h4 className="font-semibold text-gunmetal-900 dark:text-white">Team Management</h4>
+                </div>
+                <p className="text-gunmetal-700 dark:text-sand-300 text-sm leading-relaxed">
+                  Organize developers into teams, assign managers, and track usage at individual, team, and organization levels.
+                </p>
+              </div>
+
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-6 border border-neutral-200 dark:border-gunmetal-700">
+                <div className="flex items-center mb-3">
+                  <div className="w-10 h-10 bg-secondary-800 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h4 className="font-semibold text-gunmetal-900 dark:text-white">API Integrations</h4>
+                </div>
+                <p className="text-gunmetal-700 dark:text-sand-300 text-sm leading-relaxed">
+                  Connect directly to Claude, OpenAI, GitHub Copilot, and more. Automatic sync keeps your data up-to-date without manual exports.
+                </p>
+              </div>
+
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-6 border border-neutral-200 dark:border-gunmetal-700">
+                <div className="flex items-center mb-3">
+                  <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h4 className="font-semibold text-gunmetal-900 dark:text-white">Cost Optimization</h4>
+                </div>
+                <p className="text-gunmetal-700 dark:text-sand-300 text-sm leading-relaxed">
+                  Identify cost trends, optimize model usage, and get recommendations for reducing expenses while maintaining productivity.
+                </p>
               </div>
             </div>
           </div>
 
-          {/* The Fueld Portal */}
-          <div className="grid md:grid-cols-2 gap-8 items-center">
-            <div className="order-2 md:order-1">
-              <div className="bg-secondary-50 rounded-2xl p-8 border border-secondary-200">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="h-24 bg-secondary-800 rounded-lg flex items-center justify-center">
-                    <span className="text-white text-xs">📊 Analytics</span>
-                  </div>
-                  <div className="h-24 bg-gunmetal-900 rounded-lg flex items-center justify-center">
-                    <span className="text-white text-xs">👥 Participants</span>
-                  </div>
-                  <div className="h-24 bg-primary-500 rounded-lg flex items-center justify-center">
-                    <span className="text-gunmetal-900 text-xs">📈 Reports</span>
-                  </div>
-                  <div className="h-24 bg-orange-500 rounded-lg flex items-center justify-center">
-                    <span className="text-white text-xs">🎯 Targets</span>
-                  </div>
-                </div>
+          {/* Supported Platforms */}
+          <div>
+            <h3 className="text-2xl font-bold text-gunmetal-900 dark:text-white mb-4">Supported Platforms</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">Anthropic Claude</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">API Integration</p>
               </div>
-            </div>
-            <div className="order-1 md:order-2">
-              <h3 className="text-2xl font-bold text-gunmetal-900 mb-4">The Fueld Portal</h3>
-              <p className="text-gunmetal-700 mb-4 leading-relaxed">
-                The Fueld Professional Portal is a powerful, web-based platform built specifically for clinicians, dietitians, and 
-                researchers to manage studies and unlock rich dietary insights.
-              </p>
-              <p className="text-gunmetal-700 mb-4 leading-relaxed">
-                Fully integrated with the Fueld App, the portal offers complete control over the research experience from 
-                participant onboarding to advanced nutritional analysis. Professionals can customise the experience with their own 
-                branding, invite participants to join studies, and access live, meaningful data collected through the app.
-              </p>
-              <div className="mb-4">
-                <h4 className="font-semibold text-gunmetal-900 mb-2">Key features include:</h4>
-                <ul className="text-gunmetal-700 space-y-2">
-                  <li className="flex items-start">
-                    <span className="w-2 h-2 bg-secondary-600 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                    Participant and team management
-                  </li>
-                  <li className="flex items-start">
-                    <span className="w-2 h-2 bg-secondary-600 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                    Custom branding and study setup
-                  </li>
-                  <li className="flex items-start">
-                    <span className="w-2 h-2 bg-secondary-600 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                    Streamlined participant invitations with built-in data sharing consent
-                  </li>
-                  <li className="flex items-start">
-                    <span className="w-2 h-2 bg-secondary-600 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                    Real-time nutritional dashboards and trend analysis
-                  </li>
-                  <li className="flex items-start">
-                    <span className="w-2 h-2 bg-secondary-600 rounded-full mt-2 mr-3 flex-shrink-0"></span>
-                    AI-assisted reports and tailored feedback for each participant
-                  </li>
-                </ul>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">Claude Code</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">Analytics API</p>
               </div>
-              <p className="text-gunmetal-700 leading-relaxed">
-                From high-level macronutrient summaries to deep, meal-by-meal pattern recognition, the portal turns raw data into 
-                meaningful insights—empowering professionals to conduct high-quality nutritional research at scale.
-              </p>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">OpenAI</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">API Integration</p>
+              </div>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">GitHub Copilot</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">Enterprise API</p>
+              </div>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">Cursor</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">CSV Import</p>
+              </div>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">Google Gemini</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">Coming Soon</p>
+              </div>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">Codeium</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">Coming Soon</p>
+              </div>
+              <div className="bg-sand-100 dark:bg-gunmetal-800 rounded-lg p-4 text-center border border-neutral-200 dark:border-gunmetal-700">
+                <p className="font-semibold text-gunmetal-900 dark:text-white">Tabnine</p>
+                <p className="text-xs text-gunmetal-600 dark:text-sand-300 mt-1">Coming Soon</p>
+              </div>
             </div>
           </div>
 
           {/* Call to Action */}
           <div className="bg-gradient-to-r from-primary-500 to-secondary-800 rounded-2xl p-8 text-center">
-            <h3 className="text-2xl font-bold text-white mb-4">Ready to Transform Nutritional Research?</h3>
+            <h3 className="text-2xl font-bold text-white mb-4">Ready to Master AI Coding?</h3>
             <p className="text-white/90 mb-6 max-w-2xl mx-auto leading-relaxed">
-              Join the future of dietary analysis with AI-powered meal tracking and professional research tools.
+              Start tracking your team's AI usage today. Free tier available for individuals, with team plans starting at just $10/month.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a 
-                href="https://go.fueld.ai/4kkKxYj"
+                href="https://aicoder.guru"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-8 py-3 bg-white text-gunmetal-900 font-semibold rounded-xl hover:bg-gray-100 transition-colors shadow-lg"
               >
-                Learn More About Fueld
+                Visit AICoder.Guru
               </a>
-              <a 
-                href="https://go.fueld.ai/3YZ7Qyn"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={onClose}
                 className="px-8 py-3 bg-white/20 text-white font-semibold rounded-xl hover:bg-white/30 transition-colors backdrop-blur-sm border border-white/20"
               >
-                Download the App
-              </a>
+                Get Started
+              </button>
             </div>
+          </div>
+
+          {/* Version Info */}
+          <div className="text-center text-sm text-gunmetal-600 dark:text-sand-300">
+            <p>AICoder.Guru v2.0 • Built with ❤️ for developers</p>
+            <p className="mt-1">© 2025 AICoder.Guru. All rights reserved.</p>
           </div>
         </div>
       </div>
     </div>
   )
-} 
+}

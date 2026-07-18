@@ -1,65 +1,168 @@
 rules_version = '2';
 
+// DEVELOPMENT RULES - DO NOT USE IN PRODUCTION
+// These rules allow authenticated users to create their organizations and user documents
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read and write their own user document and subcollections
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'glenn@aicoder.guru' ||
+        request.auth.token.email == 'glenn@fueld.ai'
+      );
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function isOrgAdmin(orgId) {
+      return isOrgMember(orgId) &&
+        get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // ===== ORGANIZATIONS ===== 
+    match /organizations/{orgId} {
+      // Allow authenticated users to read and write organizations
+      allow read, write: if isAuthenticated();
       
-      // Users can manage their own raw cursor usage data
+      match /members/{userId} {
+        allow read, write: if isAuthenticated();
+      }
+      
+      match /teams/{teamId} {
+        allow read, write: if isAuthenticated();
+      }
+      
+      match /apiConnections/{connectionId} {
+        // Only organization members can read API connections
+        allow read: if isAuthenticated() && 
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+        // Only admins can manage API connections (write/create/delete)
+        allow write: if isAuthenticated() && 
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role == 'admin';
+      }
+      
+      match /usage/{usageId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      // Org-scoped unified usage events (token-based)
+      match /usageEvents/{eventId} {
+        // Competitive visibility: any active org member.
+        allow read: if isAuthenticated() &&
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+        // Client writes disabled (server-side only).
+        allow write, create, update, delete: if false;
+      }
+    }
+
+    // ===== API CONNECTIONS (TOP-LEVEL) =====
+    // Cloud Functions writes these docs. Clients can read:
+    // - admins: all org connections
+    // - members: only their own connections (createdBy == uid)
+    match /apiConnections/{connectionId} {
+      allow read: if isAuthenticated() &&
+        isOrgMember(resource.data.organizationId) &&
+        (resource.data.createdBy == request.auth.uid || isOrgAdmin(resource.data.organizationId));
+      allow write, create, update, delete: if false;
+    }
+    
+    // ===== SUBSCRIPTIONS =====
+    match /subscriptions/{orgId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // ===== INVITATIONS =====
+    match /invitations/{inviteId} {
+      // Read: authenticated users (UI shows pending invites for admins/managers; invitees can see their own)
+      allow read: if isAuthenticated();
+      // Writes are server-side only (Cloud Functions via Admin SDK)
+      allow create, update, delete: if false;
+    }
+    
+    // ===== USERS =====
+    match /users/{userId} {
+      allow read, write: if isAuthenticated();
+      
       match /rawUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Users can manage their own aggregated cursor usage data
       match /aggregatedUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Users can manage their own enhanced raw cursor usage data
       match /enhancedRawUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Users can manage their own enhanced aggregated cursor usage data
       match /enhancedAggregatedUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
       }
       
-      // Legacy support for existing cursorUsage collection
       match /cursorUsage/{usageId} {
-        allow read, write, create, delete: if request.auth != null && request.auth.uid == userId;
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // ===== UNIFIED USAGE EVENTS =====
+      match /usageEvents/{eventId} {
+        allow read, write, create, delete: if isUser(userId);
+      }
+
+      // Import guard docs written by Functions (and optionally readable by client)
+      match /usageEventImports/{importId} {
+        allow read, write, create, delete: if isUser(userId);
       }
     }
-    
-    // Public read access to users collection (for display names, etc.)
-    match /users/{userId} {
-      allow read: if request.auth != null;
+
+    // ===== PRICING CATALOG =====
+    // Written by Cloud Functions (Admin SDK bypasses rules). Allow reads for authenticated users for now.
+    match /pricingCatalog/{docId}/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ===== MODEL MAPPINGS =====
+    // Written by Cloud Functions; read-only and super-admin visible in app admin panel.
+    match /modelMappings/{mappingId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
     }
     
-    // Currency rates - read access for all authenticated users, write access for admins only
+    // ===== CURRENCY RATES =====
+    // Written by Cloud Functions (Admin SDK bypasses rules).
     match /currencyRates/{currencyCode} {
-      allow read: if request.auth != null;
-      allow write, create, delete: if request.auth != null && 
-        request.auth.token.email in ['glenn@fueld.ai']; // Replace with actual admin emails
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ===== CURRENCY RATES HISTORY =====
+    // Daily historical snapshots written by Cloud Functions.
+    match /currencyRatesHistory/{date} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
     
-    // Example: Allow authenticated users to create/read posts
-    match /posts/{postId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == resource.data.authorId;
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.authorId;
-    }
-    
-    // Development rule - remove in production!
-    // Uncomment the line below for development testing
-    // match /{document=**} {
-    //   allow read, write: if request.auth != null;
-    // }
-    
-    // Deny all other access
-    match /{document=**} {
-      allow read, write: if false;
+    // ===== SYNC HISTORY =====
+    match /syncHistory/{syncId} {
+      // Only organization members can read sync history
+      allow read: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/organizations/$(resource.data.organizationId)/members/$(request.auth.uid));
+      // Only Cloud Functions can write sync history (no client writes)
+      allow write: if false;
     }
   }
 }
+

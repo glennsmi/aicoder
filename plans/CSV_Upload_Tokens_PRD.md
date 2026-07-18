@@ -64,7 +64,7 @@ Fueld AI • Cursor Costs Tracker
 ### Analytics & UI Updates
 - Replace “Requests” with “Tokens” across labels, tooltips, legends, and summaries where the new flow is used.
 - Charts:
-  - Aggregate by 15m/hour/day similar to current behavior, summing tokens per model and overall.
+  - Aggregate by hour/day (hourly is the finest granularity), summing tokens per model and overall.
   - Keep cost totals using `costUsd` if available.
 - Stats cards: show total tokens; show total USD using `costUsd` sums; show models used.
 - CSV download (existing): include tokens column; if cost available, include both USD and converted currency totals.

@@ -81,9 +81,13 @@ cursor_costs/
    ```
 
 3. **Configure Firebase:**
-   - Your project is set to: `cursorcosts`
-   - Get your Firebase configuration from [Firebase Console](https://console.firebase.google.com/project/cursorcosts/settings/general)
-   - Update `frontend/src/config/firebase.ts` with your actual Firebase configuration
+   ```bash
+   cd frontend
+   cp .env.example .env.local
+   ```
+   - Get your Firebase configuration from [Firebase Console](https://console.firebase.google.com/project/aicoder-guru/settings/general)
+   - Fill in the values in `frontend/.env.local`
+   - **Never commit `.env.local`** - it's already in `.gitignore`
 
 4. **Build shared models:**
    ```bash
@@ -169,17 +173,18 @@ The function includes:
 
 ### Firebase Configuration
 
-1. **Frontend Configuration** (`frontend/src/config/firebase.ts`):
-   ```typescript
-   export const firebaseConfig = {
-     apiKey: "your-api-key",
-     authDomain: "cursorcosts.firebaseapp.com",
-     projectId: "cursorcosts",
-     storageBucket: "cursorcosts.appspot.com",
-     messagingSenderId: "123456789",
-     appId: "1:123456789:web:abcdef123456"
-   }
+1. **Frontend Configuration** (`frontend/.env.local`):
+   ```bash
+   VITE_FIREBASE_API_KEY=your-api-key
+   VITE_FIREBASE_AUTH_DOMAIN=aicoder-guru.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=aicoder-guru
+   VITE_FIREBASE_STORAGE_BUCKET=aicoder-guru.firebasestorage.app
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   VITE_FIREBASE_APP_ID=your_app_id
+   VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
    ```
+   
+   ⚠️ **Security**: See [SECURITY.md](./SECURITY.md) for best practices
 
 2. **Functions Configuration**:
    - Functions are configured to deploy to `europe-west2`
