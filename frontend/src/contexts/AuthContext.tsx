@@ -699,6 +699,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         } catch (e) {
           console.warn('Failed to sync user profile fields to Firestore:', e)
         }
+
+        // Cascade canonical Auth email to org member docs and related records.
+        // Keeps UI/admin views consistent after users change their login email.
+        try {
+          const syncMyEmailCascade = httpsCallable(functions, 'syncMyEmailCascade')
+          const result = await syncMyEmailCascade()
+          const duplicateUserDocIds = Array.isArray((result.data as any)?.duplicateUserDocIds)
+            ? ((result.data as any).duplicateUserDocIds as unknown[])
+            : []
+          if (duplicateUserDocIds.length > 0) {
+            console.warn('Duplicate user documents share this email:', duplicateUserDocIds)
+          }
+        } catch (e) {
+          console.warn('Failed to cascade user email sync:', e)
+        }
         
         // Set up real-time listener for user document changes
         setupUserListener(firebaseUser.uid)

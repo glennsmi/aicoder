@@ -102,6 +102,7 @@ export { materializeOrgUsageEvents } from './usage/materializeOrgUsageEvents'
 export { refreshPricingCatalog } from './pricing/refreshPricingCatalog'
 export { refreshCurrencyRates, refreshCurrencyRatesManual } from './currency/260205_refreshCurrencyRates'
 export { clearMyData } from './users/260209_1849_clearMyData'
+export { syncMyEmailCascade } from './users/260225_0906_syncMyEmailCascade'
 export { createIngestionApiKey, listIngestionApiKeys, revokeIngestionApiKey, revealIngestionApiKey } from './ingestion/260211_1152_ingestionApiKeys'
 export { ingestUsageFileViaApi } from './ingestion/260211_1152_ingestUsageFileViaApi'
 

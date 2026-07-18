@@ -191,7 +191,11 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
 
     const db = admin.firestore()
 
-    // File-hash import guard (same pattern as Cursor CSV ingest)
+    // File-hash import guard (same pattern as Cursor CSV ingest).
+    // See ingestUsageEventsFromCursorCsv.ts for full notes on the multi-chunk
+    // continuation rule: chunks of a single upload share `importId`, so a guard
+    // doc whose `importId` matches the incoming `importId` is a continuation,
+    // not a re-upload, and must NOT be skipped.
     const nowMs = Date.now()
     const importGuardRef =
       fileHash ? db.collection('users').doc(uid).collection('usageEventImports').doc(fileHash) : null
@@ -201,7 +205,23 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
         const snap = await tx.get(importGuardRef)
         const existing = snap.exists ? (snap.data() as any) : undefined
         const status = existing?.status
+        const existingImportId =
+          typeof existing?.importId === 'string' ? (existing.importId as string) : undefined
 
+        // Continuation of the SAME upload session (next chunk). Always allow.
+        if (existingImportId && existingImportId === importId) {
+          tx.set(
+            importGuardRef,
+            {
+              status: 'in_progress',
+              updatedAtMs: nowMs,
+            },
+            { merge: true }
+          )
+          return { skip: false }
+        }
+
+        // Different upload that already finished — genuine re-upload.
         if (status === 'complete') {
           return { skip: true }
         }
@@ -509,6 +529,8 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
       }
     }
 
+    // saved/duplicates accumulated via FieldValue.increment so the guard doc
+    // reflects the running total across all chunks of a multi-chunk upload.
     if (importGuardRef) {
       try {
         await importGuardRef.set(
@@ -516,8 +538,8 @@ export const ingestUsageEventsFromCcusageDailyJson = onCall(
             status: 'complete',
             completedAtMs: Date.now(),
             updatedAtMs: Date.now(),
-            saved,
-            duplicates,
+            saved: admin.firestore.FieldValue.increment(saved),
+            duplicates: admin.firestore.FieldValue.increment(duplicates),
             mappingDiagnostics: {
               source: 'ccusage_daily_json',
               rowsEvaluated,

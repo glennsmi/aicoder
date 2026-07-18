@@ -94,6 +94,83 @@ function normalizePriceMetadata(metadata: unknown): Record<string, string> | und
   return Object.keys(out).length > 0 ? out : undefined
 }
 
+function timestampLikeToMillis(value: unknown): number {
+  if (!value) return 0
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : 0
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'object' && value !== null && typeof (value as any).toMillis === 'function') {
+    const ms = Number((value as any).toMillis())
+    return Number.isFinite(ms) ? ms : 0
+  }
+  return 0
+}
+
+async function queryUsersByEmail(email: string): Promise<FirebaseFirestore.QueryDocumentSnapshot[]> {
+  const trimmed = String(email || '').trim()
+  const normalized = trimmed.toLowerCase()
+  if (!trimmed) return []
+
+  const docsById = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>()
+  const emailCandidates = Array.from(new Set([trimmed, normalized]))
+
+  for (const candidate of emailCandidates) {
+    if (!candidate) continue
+    const snap = await db.collection('users').where('email', '==', candidate).limit(20).get()
+    snap.docs.forEach((doc) => docsById.set(doc.id, doc))
+  }
+
+  return Array.from(docsById.values())
+}
+
+async function resolveUserByEmail(email: string): Promise<{
+  userDoc: FirebaseFirestore.QueryDocumentSnapshot | null
+  duplicateUserDocIds: string[]
+}> {
+  const userDocs = await queryUsersByEmail(email)
+  if (userDocs.length === 0) return { userDoc: null, duplicateUserDocIds: [] }
+  if (userDocs.length === 1) return { userDoc: userDocs[0], duplicateUserDocIds: [] }
+
+  const duplicateUserDocIds = userDocs.map((doc) => doc.id)
+  const normalized = String(email || '').trim().toLowerCase()
+
+  // Prefer the Auth UID if this email is present in Firebase Auth.
+  try {
+    const authUser = await admin.auth().getUserByEmail(normalized)
+    const authMatch = userDocs.find((doc) => doc.id === authUser.uid)
+    if (authMatch) {
+      return {
+        userDoc: authMatch,
+        duplicateUserDocIds: duplicateUserDocIds.filter((id) => id !== authMatch.id),
+      }
+    }
+  } catch {
+    // No auth match; fall through to Firestore timestamp heuristic.
+  }
+
+  // Fallback: pick most recently updated/created user doc.
+  const sorted = userDocs
+    .slice()
+    .sort((a, b) => {
+      const aData = a.data() as any
+      const bData = b.data() as any
+      const aMs = Math.max(
+        timestampLikeToMillis(aData?.updatedAt),
+        timestampLikeToMillis(aData?.createdAt)
+      )
+      const bMs = Math.max(
+        timestampLikeToMillis(bData?.updatedAt),
+        timestampLikeToMillis(bData?.createdAt)
+      )
+      return bMs - aMs
+    })
+
+  const selected = sorted[0]
+  return {
+    userDoc: selected,
+    duplicateUserDocIds: duplicateUserDocIds.filter((id) => id !== selected.id),
+  }
+}
+
 /**
  * Handle checkout.session.completed
  * User has completed payment on pricing table or checkout page
@@ -144,14 +221,8 @@ export async function handleCheckoutSessionCompleted(
       ''
 
     if (email) {
-      const userQuery = await db
-        .collection('users')
-        .where('email', '==', email)
-        .limit(1)
-        .get()
-
-      if (!userQuery.empty) {
-        const userDoc = userQuery.docs[0]
+      const { userDoc, duplicateUserDocIds } = await resolveUserByEmail(email)
+      if (userDoc) {
         const userData = userDoc.data() as any
 
         // Resolve based on billing target for the purchased plan.
@@ -161,6 +232,14 @@ export async function handleCheckoutSessionCompleted(
         } else {
           entityType = 'user'
           entityId = userDoc.id
+        }
+
+        if (duplicateUserDocIds.length > 0) {
+          console.warn('Duplicate users share checkout email; used deterministic resolution', {
+            email,
+            selectedUserDocId: userDoc.id,
+            ignoredUserDocIds: duplicateUserDocIds,
+          })
         }
 
         console.log(`Resolved checkout entity by email: ${email} -> ${entityType} ${entityId}`)

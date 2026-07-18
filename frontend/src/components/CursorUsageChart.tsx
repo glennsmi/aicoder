@@ -50,6 +50,17 @@ interface CursorUsageChartProps {
    * Useful for keeping leaderboards/other UI in sync with the chart.
    */
   onActiveWindowChange?: (window: { startMs: number | null; endMs: number | null }) => void
+
+  /** Controlled time period – when provided, the chart uses this instead of internal state. */
+  timePeriodControlled?: TimePeriod
+  onTimePeriodChange?: (period: TimePeriod) => void
+  /** Controlled preset anchor (ms epoch for end of preset window). */
+  presetAnchorMsControlled?: number | null
+  onPresetAnchorMsChange?: (ms: number | null) => void
+
+  /** Controlled date range for custom mode. */
+  dateRangeControlled?: DateRange | undefined
+  onDateRangeChange?: (range: DateRange | undefined) => void
 }
 
 interface ChartData {
@@ -58,8 +69,18 @@ interface ChartData {
   [model: string]: string | number | Date
 }
 
-type TimePeriod = 'last7d' | 'last14d' | 'last30d' | 'last3m' | 'custom'
-type PresetTimePeriod = Exclude<TimePeriod, 'custom'>
+export type TimePeriod = 'last7d' | 'last14d' | 'last30d' | 'last3m' | 'custom'
+export type PresetTimePeriod = Exclude<TimePeriod, 'custom'>
+
+export function getPresetWindowMs(period: TimePeriod): number {
+  switch (period) {
+    case 'last7d': return 7 * 24 * 60 * 60 * 1000
+    case 'last14d': return 14 * 24 * 60 * 60 * 1000
+    case 'last30d': return 30 * 24 * 60 * 60 * 1000
+    case 'last3m': return 90 * 24 * 60 * 60 * 1000
+    default: return 0
+  }
+}
 type GroupByMode = 'model' | 'expandedModel' | 'source'
 
 const FRIENDLY_SOURCE_LABELS: Record<string, string> = {
@@ -167,18 +188,46 @@ export default function CursorUsageChart({
   costDifference,
   lastPastedDataCost,
   onActiveWindowChange,
+  timePeriodControlled,
+  onTimePeriodChange,
+  presetAnchorMsControlled,
+  onPresetAnchorMsChange,
+  dateRangeControlled,
+  onDateRangeChange,
 }: CursorUsageChartProps) {
   // Smallest supported unit is hourly. Daily is derived from hourly.
   const [aggregationMode, setAggregationMode] = useState<'day' | 'hour'>('hour')
   const [metricMode, setMetricMode] = useState<'tokens' | 'costs'>('tokens')
   const [groupByMode, setGroupByMode] = useState<GroupByMode>('model')
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>('last30d')
-  const [presetAnchorMs, setPresetAnchorMs] = useState<number | null>(null) // end of window for 1D/2D/1W/1M
+
+  const [_timePeriod, _setTimePeriod] = useState<TimePeriod>('last30d')
+  const [_presetAnchorMs, _setPresetAnchorMs] = useState<number | null>(null)
+
+  const isTimeControlled = timePeriodControlled !== undefined
+  const timePeriod = isTimeControlled ? timePeriodControlled : _timePeriod
+  const presetAnchorMs = isTimeControlled ? (presetAnchorMsControlled ?? null) : _presetAnchorMs
+
+  const setTimePeriod = useCallback((v: TimePeriod) => {
+    if (isTimeControlled) onTimePeriodChange?.(v)
+    else _setTimePeriod(v)
+  }, [isTimeControlled, onTimePeriodChange])
+
+  const setPresetAnchorMs = useCallback((v: number | null) => {
+    if (isTimeControlled) onPresetAnchorMsChange?.(v)
+    else _setPresetAnchorMs(v)
+  }, [isTimeControlled, onPresetAnchorMsChange])
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
   const [customStartTime, setCustomStartTime] = useState<string>('00:00')
   const [customEndTime, setCustomEndTime] = useState<string>('23:59')
-  const [dateRange, setDateRange] = useState<DateRange | undefined>()
+
+  const isDateRangeControlled = dateRangeControlled !== undefined || onDateRangeChange !== undefined
+  const [_dateRange, _setDateRange] = useState<DateRange | undefined>()
+  const dateRange = isDateRangeControlled ? dateRangeControlled : _dateRange
+  const setDateRange = useCallback((v: DateRange | undefined) => {
+    if (isDateRangeControlled) onDateRangeChange?.(v)
+    else _setDateRange(v)
+  }, [isDateRangeControlled, onDateRangeChange])
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState<number | null>(null)
   const [dragEnd, setDragEnd] = useState<number | null>(null)
@@ -327,40 +376,47 @@ export default function CursorUsageChart({
     return { earliest, latest }
   }
 
-  // Auto-adjust chart settings when new data is imported
+  // Track the most recent data timestamp so the chart can keep the preset
+  // window's end pinned to it. We deliberately key off the latest timestamp
+  // (not hourlyData.length) so that uploads which add events to *existing*
+  // hour buckets still bump the anchor — otherwise "today's" bar would stay
+  // hidden behind the previously-known latest time.
+  const latestDataMs = hourlyData.length > 0
+    ? hourlyData[hourlyData.length - 1]!.timestamp
+    : 0
+
+  // One-time initialisation when data first becomes available. We don't reset
+  // the user's chosen timePeriod / aggregationMode / custom range on every
+  // subsequent upload — that was clobbering their view mid-session.
+  const hasInitialisedFromDataRef = useRef(false)
   useEffect(() => {
     if (hourlyData.length === 0) return
+    if (hasInitialisedFromDataRef.current) return
+    hasInitialisedFromDataRef.current = true
 
     const { earliest, latest } = getDataBoundaries()
-    // Reset zoom when new data comes in
     setZoomRange(null)
-
-    // Anchor presets (1D/2D/1W/1M) to the most recent data point (clamped to now).
-    // This ensures saved historical datasets still show up immediately on load.
     setPresetAnchorMs(Math.min(Date.now(), latest.getTime()))
-
-    // Default to one month (1M) for initial chart view on both
-    // personal and org dashboards, regardless of full data span.
     setTimePeriod('last30d')
     setAggregationMode('day')
-
-    // Pre-fill Custom with full data bounds (but do not force custom mode).
     setCustomStartDate(earliest.toISOString().split('T')[0])
     setCustomEndDate(latest.toISOString().split('T')[0])
     setCustomStartTime('00:00')
     setCustomEndTime('23:59')
     setDateRange({ from: earliest, to: latest })
-  }, [hourlyData.length]) // Only re-run when dataset size changes (avoid re-trigger loops)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hourlyData.length])
 
-  const getPresetWindowMs = (period: TimePeriod): number => {
-    switch (period) {
-      case 'last7d': return 7 * 24 * 60 * 60 * 1000
-      case 'last14d': return 14 * 24 * 60 * 60 * 1000
-      case 'last30d': return 30 * 24 * 60 * 60 * 1000
-      case 'last3m': return 90 * 24 * 60 * 60 * 1000
-      default: return 0
-    }
-  }
+  // Keep the preset window anchor in step with the latest event whenever new
+  // data lands (uploads, refresh after ingest, etc.). Only relevant for the
+  // preset (1W/2W/1M/3M) modes — custom mode users pick their own range.
+  useEffect(() => {
+    if (latestDataMs === 0) return
+    if (timePeriod === 'custom') return
+    setPresetAnchorMs(Math.min(Date.now(), latestDataMs))
+    setZoomRange(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestDataMs, timePeriod])
 
   const shiftPresetWindow = (direction: -1 | 1) => {
     if (timePeriod === 'custom') return
@@ -433,6 +489,27 @@ export default function CursorUsageChart({
     aggregationMode,
     hourlyData.length,
   ])
+
+  // Sync controlled dateRange → internal custom dates when parent sets it directly
+  const prevDateRangeRef = useRef(dateRange)
+  useEffect(() => {
+    if (!isDateRangeControlled) return
+    if (dateRange === prevDateRangeRef.current) return
+    prevDateRangeRef.current = dateRange
+    if (!dateRange) {
+      setCustomStartDate('')
+      setCustomEndDate('')
+      return
+    }
+    if (dateRange.from) {
+      setCustomStartDate(dateRange.from.toISOString().split('T')[0])
+      setCustomStartTime('00:00')
+    }
+    if (dateRange.to) {
+      setCustomEndDate(dateRange.to.toISOString().split('T')[0])
+      setCustomEndTime('23:59')
+    }
+  }, [isDateRangeControlled, dateRange])
 
   // Handle date range picker changes with validation
   const handleDateRangeChange = (range: DateRange | undefined) => {
@@ -546,14 +623,34 @@ export default function CursorUsageChart({
     setAggregationMode('hour')
   }
 
-  // Generate aggregation key based on mode
-  const getAggregationKey = (date: Date, mode: 'day' | 'hour'): string => {
-    if (mode === 'day') return date.toISOString().split('T')[0] // YYYY-MM-DD
-    const isoString = date.toISOString()
-    return isoString.split(':')[0] // YYYY-MM-DDTHH
+  // Local-time YYYY-MM-DD and YYYY-MM-DDTHH key helpers.
+  //
+  // Bucketing uses the BROWSER's local timezone so that bars match the user's
+  // wall-clock calendar (a "May 10" bar contains every event that happened on
+  // May 10 *in their local time*). Events are stored as UTC milliseconds, so
+  // for users east of UTC (e.g. BST = UTC+1) work done between 12:00am and
+  // 1:00am locally would otherwise bucket as the previous UTC day, and for
+  // users west of UTC (e.g. PST = UTC-8) evening work would bucket as the next
+  // UTC day. Both cases are wrong from the user's perspective.
+  const toLocalDayKey = (date: Date): string => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
   }
 
-  // Get display label for aggregation
+  const toLocalHourKey = (date: Date): string => {
+    const h = String(date.getHours()).padStart(2, '0')
+    return `${toLocalDayKey(date)}T${h}`
+  }
+
+  // Generate aggregation key based on mode (always local-time).
+  const getAggregationKey = (date: Date, mode: 'day' | 'hour'): string => {
+    if (mode === 'day') return toLocalDayKey(date)
+    return toLocalHourKey(date)
+  }
+
+  // Get display label for aggregation (local time so labels match keys).
   const getDisplayLabel = (date: Date, mode: 'day' | 'hour'): string => {
     if (mode === 'day') return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     const dayLabel = date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
@@ -672,7 +769,11 @@ export default function CursorUsageChart({
     const minDate = new Date(Math.min(...allDates.map(d => d.getTime())))
     const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())))
 
-    // Generate complete time series
+    // Generate complete time series.
+    // Iteration uses LOCAL time setters so the generated bars line up with the
+    // local-time keys produced by getAggregationKey. Iterating in UTC would
+    // place the first hour of each local day in the wrong bucket for any user
+    // whose timezone offset is non-zero.
     const completeData: ChartData[] = []
     const current = new Date(minDate)
     if (aggregationMode === 'day') {
@@ -715,7 +816,8 @@ export default function CursorUsageChart({
 
       completeData.push(chartEntry)
 
-      // Increment time period
+      // Increment time period in local time so the next bucket starts at the
+      // next local-day / local-hour boundary (matches local-time keys above).
       if (aggregationMode === 'day') {
         current.setDate(current.getDate() + 1)
       } else if (aggregationMode === 'hour') {

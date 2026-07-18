@@ -197,6 +197,13 @@ export const ingestUsageEventsFromCursorCsv = onCall(
     // File-hash import guard:
     // If the exact same file (same sha256 hash) is uploaded again, skip ingest entirely.
     // This avoids thousands of duplicate "already exists" writes.
+    //
+    // Multi-chunk uploads: the frontend chunks large CSVs and calls this function
+    // once per chunk, with every chunk sharing the same `importId`. We treat a
+    // doc whose `importId` matches the incoming `importId` as a continuation of
+    // the SAME upload (chunk 2/3/…), not a duplicate re-upload of the file.
+    // Without this, chunk 1 sets status='complete' on finalize and every later
+    // chunk gets silently skipped (saved=0, duplicates=rows.length).
     const nowMs = Date.now()
     const importGuardRef =
       fileHash ? db.collection('users').doc(uid).collection('usageEventImports').doc(fileHash) : null
@@ -205,7 +212,24 @@ export const ingestUsageEventsFromCursorCsv = onCall(
         const snap = await tx.get(importGuardRef)
         const existing = snap.exists ? (snap.data() as any) : undefined
         const status = existing?.status
+        const existingImportId =
+          typeof existing?.importId === 'string' ? (existing.importId as string) : undefined
 
+        // Continuation of the SAME upload session (next chunk). Always allow.
+        if (existingImportId && existingImportId === importId) {
+          tx.set(
+            importGuardRef,
+            {
+              status: 'in_progress',
+              updatedAtMs: nowMs,
+            },
+            { merge: true }
+          )
+          return { skip: false }
+        }
+
+        // Different upload that already finished — genuine re-upload of the
+        // same file content. Skip to avoid re-processing thousands of rows.
         if (status === 'complete') {
           return { skip: true }
         }
@@ -214,6 +238,8 @@ export const ingestUsageEventsFromCursorCsv = onCall(
         const inProgressStaleMs = 30 * 60 * 1000
         const inProgressFresh = status === 'in_progress' && startedAtMs && nowMs - startedAtMs < inProgressStaleMs
 
+        // Another upload of the same file is mid-flight (likely a double-click
+        // or parallel browser tab). Skip this one; the other will finish it.
         if (inProgressFresh) {
           return { skip: true }
         }
@@ -521,7 +547,12 @@ export const ingestUsageEventsFromCursorCsv = onCall(
       }
     }
 
-    // Mark import guard complete (best effort)
+    // Mark import guard complete (best effort).
+    // saved/duplicates are accumulated via FieldValue.increment so that multi-
+    // chunk uploads end with a guard doc reflecting the total across every
+    // chunk, not just the last one. The final chunk's mappingDiagnostics
+    // overwrites earlier chunks' diagnostics — fine, the alert-send path
+    // already de-duplicates via the mappingAlertSent flag.
     if (importGuardRef) {
       try {
         await importGuardRef.set(
@@ -529,8 +560,8 @@ export const ingestUsageEventsFromCursorCsv = onCall(
             status: 'complete',
             completedAtMs: Date.now(),
             updatedAtMs: Date.now(),
-            saved,
-            duplicates,
+            saved: admin.firestore.FieldValue.increment(saved),
+            duplicates: admin.firestore.FieldValue.increment(duplicates),
             mappingDiagnostics: {
               source: 'cursor_csv',
               rowsEvaluated,

@@ -142,3 +142,6 @@ functions/.env
 # Stripe configuration (local only)
 .stripe-price-mapping.txt
 stripe-*.log
+
+# Firebase configuration
+aicoder-guru-firebase-adminsdk-fbsvc-0d97d14d41.json

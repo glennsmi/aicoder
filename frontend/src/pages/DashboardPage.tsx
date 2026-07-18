@@ -3,7 +3,15 @@ import { httpsCallable } from 'firebase/functions'
 import { BarChart3, SearchX, Users, Trophy } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOrganization } from '@/contexts/OrganizationContext'
-import CursorUsageChart from '@/components/CursorUsageChart'
+import CursorUsageChart, {
+  type TimePeriod,
+  type PresetTimePeriod,
+  getPresetWindowMs,
+} from '@/components/CursorUsageChart'
+import TimeRangeSegmentedControl from '@/components/TimeRangeSegmentedControl'
+import { DateRangePicker } from '@/components/DateRangePicker'
+import { type DateRange } from 'react-day-picker'
+import { cn } from '@/lib/utils'
 import { functions } from '@/config/firebaseApp'
 import { useOrgUsageEvents } from '@/hooks/useOrgUsageEvents'
 import { OrgUsageRow } from '@/lib/orgUsageEvents'
@@ -38,6 +46,10 @@ export default function DashboardPage() {
   const [selectedUserId, setSelectedUserId] = useState<string>('all')
   const [selectedStreamIds, setSelectedStreamIds] = useState<string[]>([])
   const [activeWindow, setActiveWindow] = useState<ActiveWindow>({ startMs: null, endMs: null })
+
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('last30d')
+  const [presetAnchorMs, setPresetAnchorMs] = useState<number | null>(null)
+  const [dateRange, setDateRange] = useState<DateRange | undefined>()
 
   const [showAllUsers, setShowAllUsers] = useState(false)
   const [showAllTeams, setShowAllTeams] = useState(false)
@@ -161,6 +173,24 @@ export default function DashboardPage() {
 
   const hasTeamCompetition = teams.length > 1 && selectedTeamId === 'all'
 
+  const shiftPresetWindow = (direction: -1 | 1) => {
+    if (timePeriod === 'custom') return
+    const windowMs = getPresetWindowMs(timePeriod)
+    if (!windowMs) return
+    const maxAnchor = Date.now()
+    const current = presetAnchorMs ?? maxAnchor
+    const next = current + direction * windowMs
+    setPresetAnchorMs(Math.max(baseWindow.startMs, Math.min(maxAnchor, next)))
+  }
+
+  const activeWindowLabel = useMemo(() => {
+    if (!activeWindow.startMs || !activeWindow.endMs) return ''
+    const fmt: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+    const start = new Date(activeWindow.startMs)
+    const end = new Date(activeWindow.endMs)
+    return `${start.toLocaleDateString('en-US', fmt)} \u2192 ${end.toLocaleDateString('en-US', fmt)}`
+  }, [activeWindow.startMs, activeWindow.endMs])
+
   // Auto-materialize org usage events if the org collection is empty.
   useEffect(() => {
     if (!organization?.id) return
@@ -217,10 +247,87 @@ export default function DashboardPage() {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">Usage Analytics</h1>
-        <p className="text-neutral-500 dark:text-gray-400 mt-2">
-          Organization-wide usage for {organization.name}
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">Usage Analytics</h1>
+            <p className="text-neutral-500 dark:text-gray-400 mt-2">
+              Organization-wide usage for {organization.name}
+            </p>
+          </div>
+
+          {/* Page-level time range controls */}
+          <div className="flex flex-col items-start sm:items-end gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => shiftPresetWindow(-1)}
+                disabled={timePeriod === 'custom'}
+                className={cn(
+                  'inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors border',
+                  timePeriod === 'custom'
+                    ? 'opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400'
+                    : 'border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600',
+                )}
+                title="Previous window"
+              >
+                ‹
+              </button>
+              <TimeRangeSegmentedControl<PresetTimePeriod>
+                value={timePeriod === 'custom' ? null : timePeriod}
+                onChange={(v) => setTimePeriod(v)}
+                options={[
+                  { value: 'last7d', label: '1W' },
+                  { value: 'last14d', label: '2W' },
+                  { value: 'last30d', label: '1M' },
+                  { value: 'last3m', label: '3M' },
+                ]}
+                className="mx-1"
+              />
+              <button
+                onClick={() => setTimePeriod('custom')}
+                className={cn(
+                  'ml-1 inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors',
+                  timePeriod === 'custom'
+                    ? 'bg-secondary-900 text-white border-secondary-900'
+                    : 'bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 border-gray-200 dark:border-gray-600 hover:bg-gray-200/60 dark:hover:bg-gray-600',
+                )}
+                title="Custom Date Range"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => shiftPresetWindow(1)}
+                disabled={timePeriod === 'custom'}
+                className={cn(
+                  'inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors border',
+                  timePeriod === 'custom'
+                    ? 'opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-600 text-gray-400'
+                    : 'border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600',
+                )}
+                title="Next window"
+              >
+                ›
+              </button>
+            </div>
+            {activeWindowLabel && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                <span className="font-medium">Showing:</span> {activeWindowLabel}
+              </div>
+            )}
+            {timePeriod === 'custom' && (
+              <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 p-2 rounded-lg border border-gray-200 dark:border-gray-600 mt-1">
+                <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Date Range:</span>
+                <DateRangePicker
+                  value={dateRange}
+                  onChange={setDateRange}
+                  placeholder="Select date range"
+                  className="w-60 text-xs"
+                />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Materialization status */}
@@ -476,6 +583,12 @@ export default function DashboardPage() {
           data={filteredRows as any}
           isLoading={rowsLoading || materializeStatus.running}
           onActiveWindowChange={(w) => setActiveWindow(w)}
+          timePeriodControlled={timePeriod}
+          onTimePeriodChange={setTimePeriod}
+          presetAnchorMsControlled={presetAnchorMs}
+          onPresetAnchorMsChange={setPresetAnchorMs}
+          dateRangeControlled={dateRange}
+          onDateRangeChange={setDateRange}
         />
       )}
     </div>

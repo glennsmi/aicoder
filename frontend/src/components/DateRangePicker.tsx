@@ -64,7 +64,7 @@ export function DateRangePicker({
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          className="z-50 w-auto max-w-2xl p-4 bg-white border border-gray-200 rounded-lg shadow-lg dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
+          className="z-50 w-auto max-w-2xl p-4 bg-white border border-gray-200 rounded-lg shadow-lg text-gray-900 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100"
           align="end"
           side="bottom"
           sideOffset={4}
@@ -77,27 +77,27 @@ export function DateRangePicker({
             onSelect={handleSelect}
             numberOfMonths={2}
             showOutsideDays={true}
-            disabled={{ after: new Date() }} // Disable future dates
-            defaultMonth={new Date(new Date().getFullYear(), new Date().getMonth() - 1)} // Start with previous month
-            fromMonth={new Date(new Date().getFullYear() - 1, new Date().getMonth())} // Allow 1 year back
-            toMonth={new Date()} // Don't allow navigation beyond current month
+            disabled={{ after: new Date() }}
+            defaultMonth={new Date(new Date().getFullYear(), new Date().getMonth() - 1)}
+            fromMonth={new Date(new Date().getFullYear() - 1, new Date().getMonth())}
+            toMonth={new Date()}
             className="rdp"
             classNames={{
-              months: 'flex flex-row space-x-4', // Ensure horizontal layout for months
-              month: 'space-y-4', // Default month styling
-              caption_label: 'text-sm font-medium',
-              head_cell: 'w-9 text-xs font-medium text-muted-foreground', // Adjusted for better alignment
-              cell: 'h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20',
-              day: 'h-9 w-9 p-0 font-normal aria-selected:opacity-100',
+              months: 'flex flex-row space-x-4',
+              month: 'space-y-4',
+              caption_label: 'text-sm font-medium text-gray-900 dark:text-gray-100',
+              head_cell: 'w-9 text-xs font-medium text-gray-500 dark:text-gray-400',
+              cell: 'h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected])]:bg-primary-500/15 dark:[&:has([aria-selected])]:bg-primary-500/25 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20',
+              day: 'h-9 w-9 p-0 font-normal aria-selected:opacity-100 text-gray-900 dark:text-gray-100',
               day_selected:
-                'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
-              day_today: 'bg-accent text-accent-foreground',
-              day_outside: 'text-muted-foreground opacity-50',
-              day_disabled: 'text-muted-foreground opacity-50',
+                'bg-primary-500 text-white hover:bg-primary-600 focus:bg-primary-600',
+              day_today: 'bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-gray-100 font-semibold',
+              day_outside: 'text-gray-400 dark:text-gray-500 opacity-50',
+              day_disabled: 'text-gray-400 dark:text-gray-500 opacity-50',
               day_range_middle:
-                'aria-selected:bg-accent aria-selected:text-accent-foreground',
+                'bg-primary-500/15 text-gray-900 dark:bg-primary-500/25 dark:text-gray-100',
               day_hidden: 'invisible',
-              nav_button: 'inline-flex items-center justify-center w-8 h-8 border border-input rounded-md bg-transparent hover:bg-accent hover:text-accent-foreground',
+              nav_button: 'inline-flex items-center justify-center w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-md bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200',
               nav_button_previous: 'absolute left-1 top-1/2 -translate-y-1/2',
               nav_button_next: 'absolute right-1 top-1/2 -translate-y-1/2',
               caption: 'flex justify-center pt-1 relative items-center',
