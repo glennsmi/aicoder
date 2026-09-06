@@ -275,6 +275,7 @@ export default function DashboardPage() {
                 value={timePeriod === 'custom' ? null : timePeriod}
                 onChange={(v) => setTimePeriod(v)}
                 options={[
+                  { value: 'last1d', label: '1D' },
                   { value: 'last7d', label: '1W' },
                   { value: 'last14d', label: '2W' },
                   { value: 'last30d', label: '1M' },

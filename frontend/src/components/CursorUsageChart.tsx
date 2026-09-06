@@ -1,6 +1,8 @@
+import ViewportTooltip from '@/components/ViewportTooltip'
+import { usageSourceLabel, usageSourceTools } from '@/lib/usageSource'
 import React, { useMemo, useState, useRef, useCallback, useEffect, useTransition } from 'react'
 import { createPortal } from 'react-dom'
-import { Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts'
+import { Area, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts'
 import * as htmlToImage from 'html-to-image';
 import { BarChart3 } from 'lucide-react'
 import { CursorUsageV2 as CursorUsage } from '@shared'
@@ -12,9 +14,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useOrganization } from '@/contexts/OrganizationContext'
 import CurrencySelector from './CurrencySelector'
-import TimeRangeSegmentedControl from './TimeRangeSegmentedControl'
 import * as Popover from '@radix-ui/react-popover'
-import { aggregateCursorUsageV2ToHourlyByModel } from '@/lib/hourlyBuckets'
+import { aggregateCursorUsageV2ToHourlyByModel, type GroupByMode, type ModelProviderLabel } from '@/lib/hourlyBuckets'
 
 const CORE_MODEL_COLORS = [
   // Primary vibrant colors (base palette) - strategically ordered for maximum distinction
@@ -39,6 +40,17 @@ const CORE_MODEL_COLORS = [
   '#F1948A', // Salmon
   '#D7BDE2', // Light Purple
 ] as const
+
+// Fixed hues for provider grouping so stacked bars stay distinguishable
+// on both dark and light backgrounds (orange / green / sky, not adjacent pastels).
+const PROVIDER_COLORS: Record<ModelProviderLabel, string> = {
+  Cursor: '#F75C03',
+  OpenAI: '#10B981',
+  Anthropic: '#38BDF8',
+  Google: '#EAB308',
+  GitHub: '#A78BFA',
+  Other: '#94A3B8',
+}
 
 interface CursorUsageChartProps {
   data: CursorUsage[]
@@ -69,11 +81,12 @@ interface ChartData {
   [model: string]: string | number | Date
 }
 
-export type TimePeriod = 'last7d' | 'last14d' | 'last30d' | 'last3m' | 'custom'
+export type TimePeriod = 'last1d' | 'last7d' | 'last14d' | 'last30d' | 'last3m' | 'custom'
 export type PresetTimePeriod = Exclude<TimePeriod, 'custom'>
 
 export function getPresetWindowMs(period: TimePeriod): number {
   switch (period) {
+    case 'last1d': return 24 * 60 * 60 * 1000
     case 'last7d': return 7 * 24 * 60 * 60 * 1000
     case 'last14d': return 14 * 24 * 60 * 60 * 1000
     case 'last30d': return 30 * 24 * 60 * 60 * 1000
@@ -81,28 +94,25 @@ export function getPresetWindowMs(period: TimePeriod): number {
     default: return 0
   }
 }
-type GroupByMode = 'model' | 'expandedModel' | 'source'
+const toFriendlySourceLabel = usageSourceLabel
 
-const FRIENDLY_SOURCE_LABELS: Record<string, string> = {
-  cursor_csv: 'Cursor CSV Upload',
-  ccusage_daily_json: 'Claude Code Usage',
-  'claude code desktop api': 'Claude Code Desktop API',
-  claude_code_usage: 'Claude Code Usage',
-  anthropic_usage_api: 'Anthropic Usage API',
-  anthropic_code_api: 'Anthropic Code API',
-  openai_api: 'OpenAI API',
-  github_copilot_api: 'GitHub Copilot API',
-  gemini_api: 'Gemini API',
-  codeium_api: 'Codeium API',
+function groupByCopy(mode: GroupByMode): { lower: string; title: string; column: string } {
+  switch (mode) {
+    case 'expandedModel':
+      return { lower: 'expanded model', title: 'Expanded model', column: 'Expanded Model' }
+    case 'source':
+      return { lower: 'source tool', title: 'Source tool', column: 'Source tool' }
+    case 'provider':
+      return { lower: 'provider', title: 'Provider', column: 'Provider' }
+    default:
+      return { lower: 'model', title: 'Model', column: 'Model' }
+  }
 }
 
-function toFriendlySourceLabel(raw: string): string {
-  const key = String(raw || '').trim().toLowerCase()
-  if (!key) return 'Unknown Source'
-  if (FRIENDLY_SOURCE_LABELS[key]) return FRIENDLY_SOURCE_LABELS[key]
-  return key
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+function isSplitUnknownGroup(name: string, mode: GroupByMode): boolean {
+  if (mode === 'source') return false
+  if (mode === 'provider') return name === 'OpenAI' || name === 'Google'
+  return isSplitUnknownModelName(name)
 }
 
 type HoverPopoverProps = {
@@ -183,7 +193,7 @@ function percentOfTotal(part: number, total: number): string | null {
 }
 
 export default function CursorUsageChart({
-  data,
+  data: allSourceData,
   isLoading = false,
   costDifference,
   lastPastedDataCost,
@@ -195,10 +205,20 @@ export default function CursorUsageChart({
   dateRangeControlled,
   onDateRangeChange,
 }: CursorUsageChartProps) {
+  const [sourceFilter, setSourceFilter] = useState('')
+  const availableSources = useMemo(() => [...new Set(allSourceData.map(row => usageSourceLabel(row.source || row.raw?.source)))].sort(), [allSourceData])
+  const effectiveSourceFilter = availableSources.includes(sourceFilter) ? sourceFilter : ''
+  // Filter original events before hourly aggregation can combine tools using the same model.
+  const data = useMemo(() => effectiveSourceFilter
+    ? allSourceData.filter(row => usageSourceLabel(row.source || row.raw?.source) === effectiveSourceFilter)
+    : allSourceData, [allSourceData, effectiveSourceFilter])
   // Smallest supported unit is hourly. Daily is derived from hourly.
   const [aggregationMode, setAggregationMode] = useState<'day' | 'hour'>('hour')
   const [metricMode, setMetricMode] = useState<'tokens' | 'costs'>('tokens')
+  const [chartStyle, setChartStyle] = useState<'bars' | 'area'>('bars')
   const [groupByMode, setGroupByMode] = useState<GroupByMode>('model')
+  const [tableDensity, setTableDensity] = useState<'compact' | 'full'>('compact')
+  const isCompactTable = tableDensity === 'compact'
 
   const [_timePeriod, _setTimePeriod] = useState<TimePeriod>('last30d')
   const [_presetAnchorMs, _setPresetAnchorMs] = useState<number | null>(null)
@@ -216,6 +236,24 @@ export default function CursorUsageChart({
     if (isTimeControlled) onPresetAnchorMsChange?.(v)
     else _setPresetAnchorMs(v)
   }, [isTimeControlled, onPresetAnchorMsChange])
+
+  const wantsCustomRange = timePeriod === 'custom'
+  const [customRangeMounted, setCustomRangeMounted] = useState(wantsCustomRange)
+  const [customRangeVisible, setCustomRangeVisible] = useState(wantsCustomRange)
+
+  useEffect(() => {
+    if (wantsCustomRange) {
+      setCustomRangeMounted(true)
+      const frame = window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setCustomRangeVisible(true))
+      })
+      return () => window.cancelAnimationFrame(frame)
+    }
+    setCustomRangeVisible(false)
+    const hideTimer = window.setTimeout(() => setCustomRangeMounted(false), 400)
+    return () => window.clearTimeout(hideTimer)
+  }, [wantsCustomRange])
+
   const [customStartDate, setCustomStartDate] = useState<string>('')
   const [customEndDate, setCustomEndDate] = useState<string>('')
   const [customStartTime, setCustomStartTime] = useState<string>('00:00')
@@ -273,7 +311,7 @@ export default function CursorUsageChart({
         return String(usage.expandedModelName || rawExpandedModelName || usage.model || '').trim()
       }
       if (groupByMode === 'source') {
-        return String(usage.source || usage.model || '').trim()
+        return usageSourceLabel(usage.source)
       }
       return String(usage.model || '').trim()
     },
@@ -566,19 +604,20 @@ export default function CursorUsageChart({
     }
   }
 
-  // Auto-adjust aggregation mode based on time period
+  // Keep preset granularity in sync when either internal or parent controls change it.
+  useEffect(() => {
+    if (timePeriod === 'last1d' || timePeriod === 'last7d' || timePeriod === 'last14d') {
+      setAggregationMode('hour')
+    } else if (timePeriod === 'last30d' || timePeriod === 'last3m') {
+      setAggregationMode('day')
+    }
+  }, [timePeriod])
+
   const handleTimePeriodChange = (newPeriod: TimePeriod) => {
     setTimePeriod(newPeriod)
     
     // Reset zoom when changing time periods to prevent chart disappearing
     setZoomRange(null)
-    
-    // Auto-select appropriate aggregation mode for presets
-    if (newPeriod === 'last7d' || newPeriod === 'last14d') {
-      setAggregationMode('hour')
-    } else if (newPeriod === 'last30d' || newPeriod === 'last3m') {
-      setAggregationMode('day')
-    }
     
     // Set default dates for custom range
     if (newPeriod === 'custom') {
@@ -608,19 +647,6 @@ export default function CursorUsageChart({
     if (newPeriod !== 'custom') {
       setPresetAnchorMs(Date.now())
     }
-  }
-
-  // Quick preset functions for common time ranges
-  const setQuickRange = (hours: number) => {
-    const now = new Date()
-    const start = new Date(now.getTime() - hours * 60 * 60 * 1000)
-    
-    setCustomStartDate(start.toISOString().split('T')[0])
-    setCustomEndDate(now.toISOString().split('T')[0])
-    setCustomStartTime(start.toTimeString().slice(0, 5))
-    setCustomEndTime(now.toTimeString().slice(0, 5))
-    setTimePeriod('custom')
-    setAggregationMode('hour')
   }
 
   // Local-time YYYY-MM-DD and YYYY-MM-DDTHH key helpers.
@@ -694,7 +720,7 @@ export default function CursorUsageChart({
     const filteredData = hourlyData.slice(lo, hi)
 
     // If no data matches the filter:
-    // - For presets (1D/2D/1W/1M): return [] so we can show an explicit "no data in this window" state.
+    // - For presets: return [] so we can show an explicit "no data in this window" state.
     // - For custom: keep the old fallback behavior to help users recover from out-of-bounds selection.
     if (filteredData.length === 0 && hourlyData.length > 0 && timePeriod === 'custom') {
       console.log('No data in selected range, showing data boundaries instead')
@@ -888,7 +914,11 @@ export default function CursorUsageChart({
     }
 
     for (const name of allModels) {
-      const baseColor = CORE_MODEL_COLORS[colorIndexByName.get(name) ?? 0]!
+      const hashedColor = CORE_MODEL_COLORS[colorIndexByName.get(name) ?? 0]!
+      const baseColor =
+        groupByMode === 'provider' && name in PROVIDER_COLORS
+          ? PROVIDER_COLORS[name as ModelProviderLabel]
+          : hashedColor
       const rgb = hexToRgb(baseColor)
       const inputColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.9)`
       const outputColor = `rgba(${Math.min(rgb.r + 50, 255)}, ${Math.min(rgb.g + 50, 255)}, ${Math.min(rgb.b + 50, 255)}, 0.7)`
@@ -944,13 +974,33 @@ export default function CursorUsageChart({
     [filteredData, aggregationMode, metricMode, modelKeyByName, modelDefs, zoomRange, resolveGroupName]
   )
 
+  const displayChartData = useMemo(() => {
+    if (chartStyle !== 'area') return chartData
+    const running: Record<string, number> = {}
+    return chartData.map((point) => {
+      const next: ChartData = { date: point.date, fullDate: point.fullDate }
+      for (const d of modelDefs) {
+        const total = Number(point[d.key] || 0)
+        const input = Number(point[`${d.key}_input`] || 0)
+        const output = Number(point[`${d.key}_output`] || 0)
+        running[d.key] = (running[d.key] || 0) + total
+        running[`${d.key}_input`] = (running[`${d.key}_input`] || 0) + input
+        running[`${d.key}_output`] = (running[`${d.key}_output`] || 0) + output
+        next[d.key] = running[d.key]
+        next[`${d.key}_input`] = running[`${d.key}_input`]
+        next[`${d.key}_output`] = running[`${d.key}_output`]
+      }
+      return next
+    })
+  }, [chartData, chartStyle, modelDefs])
+
   const hasDataInWindow = chartData.length > 0
 
   const chartDataByLabel = useMemo(() => {
     const m = new Map<string, ChartData>()
-    for (const d of chartData) m.set(d.date, d)
+    for (const d of displayChartData) m.set(d.date, d)
     return m
-  }, [chartData])
+  }, [displayChartData])
 
   // Raw event details (top-K) for the current window (details on demand).
   const filteredTotals = useMemo(() => {
@@ -961,11 +1011,20 @@ export default function CursorUsageChart({
     for (const u of filteredData) {
       tokens += u.tokens || 0
       costUsd += u.costUsd || 0
+      if (groupByMode === 'provider') {
+        const totals = (u.raw as any)?.expandedModelTokenTotals
+        if (totals && typeof totals === 'object') {
+          for (const name of Object.keys(totals as Record<string, unknown>)) {
+            if (name) models.add(name)
+          }
+          continue
+        }
+      }
       if (u.model) models.add(u.model)
     }
 
     return { tokens, costUsd, modelsUsed: models.size }
-  }, [filteredData])
+  }, [filteredData, groupByMode])
 
   const activeBucketCount = useMemo(() => {
     if (chartData.length === 0) return 0
@@ -1025,6 +1084,7 @@ export default function CursorUsageChart({
   type ModelBreakdownRow = {
     model: string
     modelIndex: number
+    sourceTools: string[]
     expandedModelTokenRows: Array<{ model: string; tokens: number }>
     inputTokens: number
     inputWithCacheWriteTokens: number
@@ -1057,6 +1117,7 @@ export default function CursorUsageChart({
       const prev = byModel.get(model) ?? {
         model,
         modelIndex: allModels.indexOf(model),
+        sourceTools: [],
         expandedModelTokenRows: [],
         inputTokens: 0,
         inputWithCacheWriteTokens: 0,
@@ -1089,6 +1150,7 @@ export default function CursorUsageChart({
         .map(([name, tokens]) => ({ model: name, tokens }))
         .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
 
+      prev.sourceTools = [...new Set([...prev.sourceTools, ...usageSourceTools(usage)])].sort()
       prev.totalTokens += usage.tokens || 0
       prev.costUsd += usage.costUsd || 0
 
@@ -1198,7 +1260,6 @@ export default function CursorUsageChart({
     CORE_MODEL_COLORS[hashString32(modelName) % CORE_MODEL_COLORS.length]!
 
   // Custom tooltip
-  const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
 
   const formatTokenTick = (value: number) => {
     const n = Number(value)
@@ -1245,7 +1306,7 @@ export default function CursorUsageChart({
       }
       
       // Group by model for tokens mode to show input/output together
-      if (metricMode === 'tokens') {
+      if (metricMode === 'tokens' && chartStyle === 'bars') {
         const modelGroups: { [key: string]: { input: number, output: number, inputColor: string, outputColor: string } } = {}
         barPayload.forEach((entry: any) => {
           const isInput = entry.dataKey.endsWith('_input')
@@ -1265,42 +1326,8 @@ export default function CursorUsageChart({
         
         const totalTokens = Object.values(modelGroups).reduce((sum, g) => sum + g.input + g.output, 0)
 
-        const groupCount = Object.keys(modelGroups).filter((k) => {
-          const g = modelGroups[k]
-          return (g?.input ?? 0) > 0 || (g?.output ?? 0) > 0
-        }).length
-
-        // Cursor-following tooltip with edge clamping; bias "above" and push higher to avoid covering bars.
-        const estimatedHeightPx = Math.min(620, 132 + groupCount * 34)
-        const margin = 18
-        const cursorX = rect.left + coordinate.x
-        const cursorY = rect.top + coordinate.y
-        const spaceAbove = cursorY
-        const spaceBelow = window.innerHeight - cursorY
-        const placement: 'above' | 'below' =
-          spaceAbove >= estimatedHeightPx + margin ? 'above'
-            : spaceBelow >= estimatedHeightPx + margin ? 'below'
-              : spaceAbove >= spaceBelow ? 'above' : 'below'
-
-        const assumedWidth = Math.min(430, window.innerWidth - 24)
-        const left = clamp(cursorX, assumedWidth / 2 + 12, window.innerWidth - assumedWidth / 2 - 12)
-        const top = cursorY
-
         return createPortal((
-          <div
-            className="rounded-lg shadow-xl w-[430px] max-w-[calc(100vw-24px)] border border-gray-200 overflow-hidden"
-            style={{
-              position: 'fixed',
-              left,
-              top,
-              transform:
-                placement === 'below'
-                  ? 'translate(-50%, 18px)'
-                  : 'translate(-50%, calc(-100% - 28px))',
-              zIndex: 2147483647,
-              pointerEvents: 'none',
-            }}
-          >
+          <ViewportTooltip x={rect.left + coordinate.x} y={rect.top + coordinate.y}>
             {/* Title bar */}
             <div className="bg-secondary-900 text-white px-3 py-2">
               <div className="font-semibold text-sm">
@@ -1316,7 +1343,7 @@ export default function CursorUsageChart({
 
             {/* Body */}
             <div className="bg-white text-gray-900 px-3 py-2">
-              <div className="max-h-[52vh] overflow-y-auto pr-1">
+              <div className="pr-1">
                 {Object.entries(modelGroups)
                   .filter(([_, data]) => data.input > 0 || data.output > 0)
                   .map(([modelKey, data]) => {
@@ -1358,43 +1385,14 @@ export default function CursorUsageChart({
                 </div>
               )}
             </div>
-          </div>
+          </ViewportTooltip>
         ), body)
       }
       
       // Original tooltip for costs mode
       const totalValue = barPayload.reduce((sum: number, entry: any) => sum + (entry.value || 0), 0)
-      // Cursor-following tooltip (costs mode)
-      const estimatedHeightPx = Math.min(520, 132 + barPayload.filter((e: any) => (e?.value ?? 0) > 0).length * 22)
-      const margin = 18
-      const cursorX = rect.left + coordinate.x
-      const cursorY = rect.top + coordinate.y
-      const spaceAbove = cursorY
-      const spaceBelow = window.innerHeight - cursorY
-      const placement: 'above' | 'below' =
-        spaceAbove >= estimatedHeightPx + margin ? 'above'
-          : spaceBelow >= estimatedHeightPx + margin ? 'below'
-            : spaceAbove >= spaceBelow ? 'above' : 'below'
-
-      const assumedWidth = Math.min(430, window.innerWidth - 24)
-      const left = clamp(cursorX, assumedWidth / 2 + 12, window.innerWidth - assumedWidth / 2 - 12)
-      const top = cursorY
-
       return createPortal((
-        <div
-          className="rounded-lg shadow-xl w-[430px] max-w-[calc(100vw-24px)] border border-gray-200 overflow-hidden"
-          style={{
-            position: 'fixed',
-            left,
-            top,
-            transform:
-              placement === 'below'
-                ? 'translate(-50%, 18px)'
-                : 'translate(-50%, calc(-100% - 28px))',
-            zIndex: 2147483647,
-            pointerEvents: 'none',
-          }}
-        >
+        <ViewportTooltip x={rect.left + coordinate.x} y={rect.top + coordinate.y}>
           {/* Title bar */}
           <div className="bg-secondary-900 text-white px-3 py-2">
             <div className="font-semibold text-sm">
@@ -1410,7 +1408,7 @@ export default function CursorUsageChart({
 
           {/* Body */}
           <div className="bg-white text-gray-900 px-3 py-2">
-            <div className="max-h-[52vh] overflow-y-auto pr-1">
+            <div className="pr-1">
               {barPayload
                 .filter((entry: any) => entry.value > 0)
                 .map((entry: any, index: number) => (
@@ -1437,7 +1435,7 @@ export default function CursorUsageChart({
               </div>
             )}
           </div>
-        </div>
+        </ViewportTooltip>
       ), body)
     }
     return null
@@ -1533,21 +1531,37 @@ export default function CursorUsageChart({
       `}</style>
       
       <div ref={entireChartRef} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-8 relative transition-colors duration-200">
+        <label className="mb-4 flex flex-wrap items-center gap-2 text-sm text-gray-900 dark:text-gray-100">
+          <span className="font-medium">Source tool</span>
+          <select aria-label="Filter by source tool" value={effectiveSourceFilter}
+            onChange={event => {
+              setSourceFilter(event.target.value)
+              setSelectedModel(null)
+              setSelectedModelForChart(null)
+              setReferenceModel(null)
+            }}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-primary-500">
+            <option value="">All sources</option>
+            {availableSources.map(source => <option key={source} value={source}>{source}</option>)}
+          </select>
+        </label>
         {/* Top Bar - AI Coder Guru Dark Blue (hidden in UI, shown in copy) */}
         <div className="top-bar bg-secondary-900 py-3 -mx-6 -mt-6 mb-4 hidden" style={{ borderTopLeftRadius: '0.75rem', borderTopRightRadius: '0.75rem' }}></div>
       
-      <div className={cn("flex items-start justify-between", activeWindowLabel ? "mb-8" : "mb-4")}>
+      <div className="flex items-start justify-between gap-3 mb-4">
         {/* Left section for title */}
-        <div className="flex-grow mr-4">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white transition-colors duration-200">
-            {aggregationMode === 'day' ? 'Daily' : 'Hourly'} tokens by {groupByMode === 'model' ? 'model' : groupByMode === 'expandedModel' ? 'expanded model' : 'source'}
+        <div className="flex-grow mr-2 min-w-0">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white transition-colors duration-200 truncate">
+            {chartStyle === 'area'
+              ? `Cumulative ${metricMode === 'costs' ? 'costs' : 'tokens'} by ${groupByCopy(groupByMode).lower}`
+              : `${aggregationMode === 'day' ? 'Daily' : 'Hourly'} tokens by ${groupByCopy(groupByMode).lower}`}
           </h3>
         </div>
 
-        {/* Right section for controls and copy button - responsive layout */}
-        <div className="flex flex-wrap items-center gap-2 flex-shrink-0 w-full md:w-auto md:flex-nowrap [@media(max-width:719px)]:flex-col [@media(max-width:719px)]:items-stretch">
-          {/* Time Period Selector */}
-          <div className="relative">
+        {/* Right section: date range stays, other choices become dropdowns */}
+        <div className="flex flex-col items-end gap-1 flex-shrink-0 w-full md:w-auto">
+          <div className="flex flex-wrap items-start justify-end gap-2 [@media(max-width:719px)]:flex-col [@media(max-width:719px)]:items-stretch">
+            <div className="flex flex-col items-start gap-1">
             <div className="flex items-center gap-1">
               <button
                 onClick={() => shiftPresetWindow(-1)}
@@ -1562,32 +1576,19 @@ export default function CursorUsageChart({
               >
                 ‹
               </button>
-              <TimeRangeSegmentedControl<PresetTimePeriod>
-                value={timePeriod === 'custom' ? null : timePeriod}
-                onChange={(v) => handleTimePeriodChange(v)}
-                options={[
-                  { value: 'last7d', label: '1W' },
-                  { value: 'last14d', label: '2W' },
-                  { value: 'last30d', label: '1M' },
-                  { value: 'last3m', label: '3M' },
-                ]}
-                className="mx-1"
-              />
-
-              <button
-                onClick={() => handleTimePeriodChange('custom')}
-                className={cn(
-                  "ml-1 inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-colors",
-                  timePeriod === 'custom'
-                    ? "bg-secondary-900 text-white border-secondary-900"
-                    : "bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 border-gray-200 dark:border-gray-600 hover:bg-gray-200/60 dark:hover:bg-gray-600"
-                )}
-                title="Custom Date Range"
+              <select
+                value={timePeriod}
+                onChange={(e) => handleTimePeriodChange(e.target.value as TimePeriod)}
+                className="h-9 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 px-2 focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+                title="Time frame"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </button>
+                <option value="last1d">1D</option>
+                <option value="last7d">1W</option>
+                <option value="last14d">2W</option>
+                <option value="last30d">1M</option>
+                <option value="last3m">3M</option>
+                <option value="custom">Custom</option>
+              </select>
               <button
                 onClick={() => shiftPresetWindow(1)}
                 disabled={timePeriod === 'custom'}
@@ -1601,82 +1602,75 @@ export default function CursorUsageChart({
               >
                 ›
               </button>
+              {customRangeMounted && (
+                <div
+                  className={cn(
+                    'grid min-w-0 overflow-hidden transition-[grid-template-columns] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                    customRangeVisible ? 'grid-cols-[1fr]' : 'grid-cols-[0fr]'
+                  )}
+                  aria-hidden={!customRangeVisible}
+                >
+                  <div className="min-w-0 overflow-hidden">
+                    <div
+                      className={cn(
+                        'pl-1 transition-[opacity,transform] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                        customRangeVisible
+                          ? 'translate-x-0 opacity-100'
+                          : '-translate-x-3 opacity-0',
+                        !customRangeVisible && 'pointer-events-none'
+                      )}
+                    >
+                      <DateRangePicker
+                        value={dateRange}
+                        onChange={handleDateRangeChange}
+                        placeholder="Select dates"
+                        className="h-9 w-56 py-0 text-xs rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             {activeWindowLabel && (
-              <div className="absolute left-0 top-full mt-1 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+              <div className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
                 <span className="font-medium">Showing:</span> {activeWindowLabel}
               </div>
             )}
-          </div>
-          {/* Metric Toggle */}
-          <div className="flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-0.5 transition-colors duration-200 mb-1 md:mb-0 max-w-[140px] shadow-sm">
-            <button
-              onClick={() => setMetricMode('tokens')}
-              className={cn(
-                "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
-                metricMode === 'tokens'
-                  ? 'bg-secondary-900 text-white shadow-sm'
-                  : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
-              )}
-            >
-              Tokens
-            </button>
-            <button
-              onClick={() => setMetricMode('costs')}
-              className={cn(
-                "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
-                metricMode === 'costs'
-                  ? 'bg-secondary-900 text-white shadow-sm'
-                  : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
-              )}
-            >
-              Costs
-            </button>
-          </div>
-
-          <div className="flex items-center rounded-lg p-0.5 transition-colors duration-200 mb-1 md:mb-0">
-            {/* Aggregation Toggle + Copy Button (responsive group) */}
-            <div
-              className="
-                flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl p-0.5 transition-colors duration-200 mb-1 shadow-sm
-                md:w-auto
-                flex-row
-                gap-2
-                [@media(max-width:719px)]:mt-1
-              "
-            >
-              <div className="flex items-center flex-1 min-w-0 max-w-[150px]">
-                <button
-                  onClick={() => setAggregationMode('day')}
-                  className={cn(
-                    "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
-                    aggregationMode === 'day'
-                      ? 'bg-secondary-900 text-white shadow-sm'
-                      : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
-                  )}
-                >
-                  Daily
-                </button>
-                <button
-                  onClick={() => setAggregationMode('hour')}
-                  className={cn(
-                    "inline-flex h-8 items-center justify-center px-3 text-sm font-medium rounded transition-colors",
-                    aggregationMode === 'hour'
-                      ? 'bg-secondary-900 text-white shadow-sm'
-                      : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
-                  )}
-                >
-                  Hourly
-                </button>
-              </div>
             </div>
 
-            
+            <select
+              value={metricMode}
+              onChange={(e) => setMetricMode(e.target.value as 'tokens' | 'costs')}
+              className="h-9 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 px-2 focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+              title="Metric"
+            >
+              <option value="tokens">Tokens</option>
+              <option value="costs">Costs</option>
+            </select>
 
-            {/* Copy Chart Button */}
+            <select
+              value={aggregationMode}
+              onChange={(e) => setAggregationMode(e.target.value as 'day' | 'hour')}
+              className="h-9 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 px-2 focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+              title="Interval"
+            >
+              <option value="day">Daily</option>
+              <option value="hour">Hourly</option>
+            </select>
+
+            <select
+              value={chartStyle}
+              onChange={(e) => setChartStyle(e.target.value as 'bars' | 'area')}
+              className="h-9 text-sm rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-secondary-900 dark:text-white/90 px-2 focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+              title="Chart type"
+            >
+              <option value="bars">Bars</option>
+              <option value="area">Area</option>
+            </select>
+
             <button
               onClick={handleCopyChart}
-              className="inline-flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-secondary-900 dark:text-white/90 px-3 rounded-xl hover:bg-secondary-900 hover:text-white hover:border-secondary-900 transition-all duration-200 shadow-sm hover:shadow-md ml-2"
+              className="inline-flex h-9 items-center bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-secondary-900 dark:text-white/90 px-3 rounded-xl hover:bg-secondary-900 hover:text-white hover:border-secondary-900 transition-all duration-200 shadow-sm hover:shadow-md"
               title="Copy chart as image"
             >
               <div className="flex items-center gap-1.5">
@@ -1686,10 +1680,7 @@ export default function CursorUsageChart({
                 <span className="text-sm font-medium">Copy</span>
               </div>
             </button>
-
           </div>
-
-
         </div>
       </div>
 
@@ -1711,30 +1702,6 @@ export default function CursorUsageChart({
           </button>
         </div>
       )}
-
-      {/* Custom Date Range - ensure it doesn't cause overflow, or hide on small screens */}
-      {timePeriod === 'custom' && (
-        <div className="flex justify-end gap-2 mb-4">
-            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 p-2 rounded-lg border border-gray-200 dark:border-gray-600">
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Date Range:</span>
-              <DateRangePicker
-                value={dateRange}
-                onChange={handleDateRangeChange}
-                placeholder="Select date range"
-                className="w-60 text-xs" // Reduced width and text size
-              />
-              {aggregationMode === 'hour' && (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">Quick:</span>
-                  <button onClick={() => setQuickRange(6)} className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors">6h</button>
-                  <button onClick={() => setQuickRange(12)} className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors">12h</button>
-                  <button onClick={() => setQuickRange(24)} className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors">24h</button>
-                </div>
-              )}
-            </div>
-        </div>
-      )}
-
 
       {/* Chart */}
       <div className="h-96 w-full" ref={chartRef}>
@@ -1775,7 +1742,7 @@ export default function CursorUsageChart({
         >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
-              data={chartData}
+              data={displayChartData}
               margin={{
                 top: 20,
                 right: 30,
@@ -1783,6 +1750,13 @@ export default function CursorUsageChart({
                 bottom: 20, // Back to normal margin
               }}
             >
+              {chartStyle === 'area' && (
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="3 3"
+                  stroke={actualTheme === 'dark' ? '#374151' : '#e5e7eb'}
+                />
+              )}
               <XAxis 
                 dataKey="date" 
                 tick={{ fontSize: xAxisConfig.tickFontSize, fill: '#6b7280' }}
@@ -1805,8 +1779,31 @@ export default function CursorUsageChart({
                 allowEscapeViewBox={{ x: true, y: true }}
               />
               
-              {/* Create stacked bars for each model - Input (bottom) and Output (top) */}
-              {metricMode === 'tokens' ? (
+              {chartStyle === 'area' ? (
+                modelDefs.map((d, i) => {
+                  const isDimmed = selectedModelForChart !== null && selectedModelForChart !== d.name
+                  return (
+                    <Area
+                      key={d.key}
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey={d.key}
+                      stackId="usage"
+                      stroke={d.baseColor}
+                      fill={d.baseColor}
+                      fillOpacity={isDimmed ? 0.2 : 0.85}
+                      name={d.displayName}
+                      opacity={isDimmed ? 0.35 : 1}
+                      isAnimationActive={true}
+                      animationDuration={600}
+                      animationBegin={i * 40}
+                      animationEasing="ease-out"
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                    />
+                  )
+                })
+              ) : metricMode === 'tokens' ? (
                 modelDefs.map((d, i) => {
                   const isDimmed = selectedModelForChart !== null && selectedModelForChart !== d.name
                   return (
@@ -1920,7 +1917,7 @@ export default function CursorUsageChart({
           {/* Dynamic Legend for Stacked Bars (shown on model hover) - positioned on same row */}
           <div className="flex items-center gap-4">
             {/* Reserve vertical space so toggling highlight doesn't shift layout */}
-            {metricMode === 'tokens' && (
+            {metricMode === 'tokens' && chartStyle === 'bars' && (
               <div
                 className={cn(
                   "flex items-center gap-2 px-2 py-1 h-7 bg-blue-50 dark:bg-gray-700 border border-blue-200 dark:border-gray-600 rounded transition-opacity",
@@ -2015,10 +2012,50 @@ export default function CursorUsageChart({
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-4 transition-colors duration-200">
           <div className="flex items-center justify-between mb-3 min-h-[28px]">
             <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
-              Breakdown by {groupByMode === 'model' ? 'Model' : groupByMode === 'expandedModel' ? 'Expanded model' : 'Source'} ({timePeriod === 'custom' ? 'Custom Range' : timePeriod})
+              Breakdown by {groupByCopy(groupByMode).title} ({timePeriod === 'custom' ? 'Custom Range' : timePeriod})
             </h4>
             
             <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Table:</span>
+                <div className="inline-flex h-7 items-center rounded-md border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTableDensity('compact')
+                      if (
+                        modelBreakdownSortKey !== 'model' &&
+                        modelBreakdownSortKey !== 'totalTokens' &&
+                        modelBreakdownSortKey !== 'costUsd'
+                      ) {
+                        setModelBreakdownSortKey('totalTokens')
+                        setModelBreakdownSortDir('desc')
+                      }
+                    }}
+                    className={cn(
+                      'inline-flex h-6 items-center justify-center px-2 text-xs font-medium rounded transition-colors',
+                      isCompactTable
+                        ? 'bg-secondary-900 text-white shadow-sm'
+                        : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
+                    )}
+                  >
+                    Compact
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTableDensity('full')}
+                    className={cn(
+                      'inline-flex h-6 items-center justify-center px-2 text-xs font-medium rounded transition-colors',
+                      !isCompactTable
+                        ? 'bg-secondary-900 text-white shadow-sm'
+                        : 'text-secondary-900 dark:text-white/90 hover:bg-gray-200/60 dark:hover:bg-gray-600'
+                    )}
+                  >
+                    Full
+                  </button>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Group by:</span>
                 <select
@@ -2028,11 +2065,13 @@ export default function CursorUsageChart({
                   title="Choose how chart and table are grouped"
                 >
                   <option value="model">Model</option>
+                  <option value="provider">Provider</option>
                   <option value="expandedModel">Expanded model</option>
-                  <option value="source">Source</option>
+                  <option value="source">Source tool</option>
                 </select>
               </div>
 
+              {!isCompactTable && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Price compare to:</span>
                 <select
@@ -2049,6 +2088,7 @@ export default function CursorUsageChart({
                   ))}
                 </select>
               </div>
+              )}
 
               {/* Clear highlight */}
               <button
@@ -2072,8 +2112,11 @@ export default function CursorUsageChart({
             <table className="w-full text-sm leading-5">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-600">
-                  <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">#</th>
+                  {!isCompactTable && (
+                    <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">#</th>
+                  )}
                   <th className="text-center py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Color</th>
+                  <th className="text-left py-2 px-3 font-medium text-gray-700 dark:text-gray-300">Source tool</th>
                   <th className="text-left py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
                     <button
                       type="button"
@@ -2081,12 +2124,14 @@ export default function CursorUsageChart({
                       className="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white"
                       title="Sort by model"
                     >
-                      <span>{groupByMode === 'source' ? 'Source' : groupByMode === 'expandedModel' ? 'Expanded Model' : 'Model'}</span>
+                      <span>{groupByCopy(groupByMode).column}</span>
                       <span className="text-[10px] opacity-70">
                         {modelBreakdownSortKey === 'model' ? (modelBreakdownSortDir === 'asc' ? '▲' : '▼') : ''}
                       </span>
                     </button>
                   </th>
+                  {!isCompactTable && (
+                  <>
                   <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
                     <button
                       type="button"
@@ -2152,6 +2197,8 @@ export default function CursorUsageChart({
                       </span>
                     </button>
                   </th>
+                  </>
+                  )}
                   <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
                     <button
                       type="button"
@@ -2178,6 +2225,8 @@ export default function CursorUsageChart({
                       </span>
                     </button>
                   </th>
+                  {!isCompactTable && (
+                  <>
                   <th className="text-right py-2 px-3 font-medium text-gray-700 dark:text-gray-300">
                     <button
                       type="button"
@@ -2217,13 +2266,15 @@ export default function CursorUsageChart({
                       </span>
                     </button>
                   </th>
+                  </>
+                  )}
                   
                 </tr>
               </thead>
               <tbody>
                 {sortedModelBreakdownRows.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="py-10 text-center">
+                    <td colSpan={isCompactTable ? 5 : 14} className="py-10 text-center">
                       <div className="flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-in-out]">
                         <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 mb-2">
                           <BarChart3 className="w-5 h-5 text-gray-400 dark:text-gray-500" />
@@ -2235,7 +2286,7 @@ export default function CursorUsageChart({
                 )}
                 {sortedModelBreakdownRows.map((row, idx) => {
                     const model = row.model
-                    const isSplitUnknown = isSplitUnknownModelName(model)
+                    const isSplitUnknown = isSplitUnknownGroup(model, groupByMode)
                     const expandedBreakdown = row.expandedModelTokenRows
                     const hasExpandedVariants = expandedBreakdown.length > 1
                     
@@ -2254,18 +2305,23 @@ export default function CursorUsageChart({
                         onClick={() => toggleSelectedModel(model)}
                         title="Click to highlight this model on the chart"
                       >
+                        {!isCompactTable && (
                         <td className={cn(
                           "py-2 px-3 text-right tabular-nums align-middle",
                           selectedModel === model ? "text-white/90" : "text-gray-600 dark:text-gray-300"
                         )}>
                           {idx + 1}
                         </td>
+                        )}
                         <td className="py-2 px-3 text-center align-middle">
                           <span 
                             className="inline-block w-4 h-4 rounded-full"
                             style={{ backgroundColor: getModelBaseColor(model) }}
                             title={`${displayGroupName(model)} model color`}
                           ></span>
+                        </td>
+                        <td className="py-2 px-3 align-middle whitespace-nowrap">
+                          {row.sourceTools.join(', ')}
                         </td>
                         <td className={cn(
                           "py-2 px-3 font-medium align-middle",
@@ -2288,11 +2344,19 @@ export default function CursorUsageChart({
                               contentClassName="bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg p-3 shadow-xl w-[32rem] max-w-[90vw]"
                             >
                               <div className="font-semibold mb-2 text-primary-300">
-                                {groupByMode === 'source' ? 'Source Breakdown' : 'Expanded Model Breakdown'}
+                                {groupByMode === 'source'
+                                  ? 'Source Breakdown'
+                                  : groupByMode === 'provider'
+                                    ? 'Model Breakdown'
+                                    : 'Expanded Model Breakdown'}
                               </div>
                               <div className="mb-2 text-gray-200 break-words">
                                 <span className="font-medium">
-                                  {groupByMode === 'source' ? 'Source:' : 'Base model:'}
+                                  {groupByMode === 'source'
+                                    ? 'Source:'
+                                    : groupByMode === 'provider'
+                                      ? 'Provider:'
+                                      : 'Base model:'}
                                 </span>{' '}
                                 {displayGroupName(model)}
                               </div>
@@ -2341,6 +2405,8 @@ export default function CursorUsageChart({
                             </span>
                           </div>
                         </td>
+                        {!isCompactTable && (
+                        <>
                         <td className={cn(
                           "py-2 px-3 text-right align-middle",
                           selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
@@ -2478,6 +2544,8 @@ export default function CursorUsageChart({
                         )}>
                           {row.outputTokens.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
+                        </>
+                        )}
                         <td className={cn(
                           "py-2 px-3 text-right align-middle",
                           selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
@@ -2571,6 +2639,8 @@ export default function CursorUsageChart({
                         )}>
                           ${row.costUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
+                        {!isCompactTable && (
+                        <>
                         <td className={cn(
                           "py-2 px-3 text-right align-middle",
                           selectedModel === model ? "text-white" : "text-gray-900 dark:text-white"
@@ -2611,6 +2681,8 @@ export default function CursorUsageChart({
                             '—'
                           )}
                         </td>
+                        </>
+                        )}
                         
                       </tr>
                     )
@@ -2618,11 +2690,13 @@ export default function CursorUsageChart({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-300 dark:border-gray-500 bg-gray-50 dark:bg-gray-700/50 font-semibold">
-                  <td className="py-3 px-3 text-gray-900 dark:text-white" colSpan={3}>Total</td>
+                  <td className="py-3 px-3 text-gray-900 dark:text-white" colSpan={isCompactTable ? 3 : 4}>Total</td>
+                  {!isCompactTable && (
+                  <>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     {filteredData.reduce((sum, usage) => {
                       if (usage.tokenBreakdown) {
-                        if (isSplitUnknownModelName(usage.model)) return sum
+                        if (isSplitUnknownGroup(usage.model, groupByMode)) return sum
                         return sum + (usage.tokenBreakdown.inputWithoutCacheWrite || 0)
                       }
                       return sum
@@ -2631,7 +2705,7 @@ export default function CursorUsageChart({
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     {filteredData.reduce((sum, usage) => {
                       if (usage.tokenBreakdown) {
-                        if (isSplitUnknownModelName(usage.model)) return sum
+                        if (isSplitUnknownGroup(usage.model, groupByMode)) return sum
                         return sum + (usage.tokenBreakdown.inputWithCacheWrite || 0)
                       }
                       return sum
@@ -2663,12 +2737,16 @@ export default function CursorUsageChart({
                       return sum
                     }, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
+                  </>
+                  )}
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     {filteredData.reduce((sum, usage) => sum + (usage.tokens || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </td>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     ${filteredData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
+                  {!isCompactTable && (
+                  <>
                   <td className="py-3 px-3 text-right text-gray-900 dark:text-white">
                     {formatCurrency(convertFromUSD(filteredData.reduce((sum, usage) => sum + (usage.costUsd || 0), 0)), userCurrency, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
@@ -2698,6 +2776,8 @@ export default function CursorUsageChart({
                       return output > 0 ? ((totalCosts / output) * 1_000_000).toFixed(2) : '—'
                     })()}
                   </td>
+                  </>
+                  )}
                   
                 </tr>
               </tfoot>
@@ -2786,6 +2866,10 @@ export default function CursorUsageChart({
 
       {/* Add padding below the summary cards for copy image */}
       <div className="copy-padding pb-6 hidden"></div>
+
+      <footer className="mt-4 border-t border-gray-200 pt-3 text-xs leading-relaxed text-gray-600 dark:border-gray-700 dark:text-gray-300">
+        Cursor, Codex and Claude Code usage may be included in a subscription. Reported usage costs do not necessarily represent additional charges or your subscription bill. Unknown costs are excluded from totals; $0 does not necessarily mean free usage. Local Codex and Claude Code imports do not include billed costs.
+      </footer>
 
       {/* Source Band (hidden in UI, shown in copy) */}
       <div className="source-band bg-secondary-900 text-white py-3 px-6 -mx-6 -mb-6 mt-4 hidden" style={{ borderBottomLeftRadius: '0.75rem', borderBottomRightRadius: '0.75rem' }}>

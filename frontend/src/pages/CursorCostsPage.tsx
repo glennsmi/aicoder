@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useUserUsageData } from '../hooks/useUserUsageData'
 import CSVImport from '@/components/CSVImport'
+import CodexUsageImport from '@/components/CodexUsageImport'
+import ClaudeUsageImport from '@/components/ClaudeUsageImport'
 import CursorUsageChart from '@/components/CursorUsageChart'
 import AuthModal from '@/components/AuthModal'
 import CurrencySelector from '@/components/CurrencySelector'
@@ -18,6 +20,7 @@ import { functions } from '@/config/firebaseApp'
 import { getUserAnySavedUsageV2 } from '@/lib/usageEvents'
 
 const usageRowMergeKey = (row: CursorUsageV2): string => {
+  if (row.source === 'codex_local' || row.source === 'claude_code_local') return `${row.source}:${row.raw?.event_id || row.id}`
   const tb = row.tokenBreakdown
   return [
     String(row.timestamp),
@@ -616,6 +619,22 @@ const handleTokensImport = async (
             disabled={loading || isSavingUsageEvents}
           />
           
+          <CodexUsageImport signedIn={Boolean(currentUser)} disabled={loading || isSavingUsageEvents}
+            onImport={rows => setTempDataV2(previous => {
+              const merged = new Map(previous.map(row => [usageRowMergeKey(row), row]))
+              rows.forEach(row => merged.set(usageRowMergeKey(row), row))
+              return [...merged.values()].sort((a, b) => a.timestamp - b.timestamp)
+            })} />
+          <ClaudeUsageImport signedIn={Boolean(currentUser)} disabled={loading || isSavingUsageEvents}
+            onImport={rows => setTempDataV2(previous => {
+              const merged = new Map(previous.map(row => [usageRowMergeKey(row), row]))
+              rows.forEach(row => {
+                const key = usageRowMergeKey(row), existing = merged.get(key)
+                if (!existing || row.tokens > existing.tokens) merged.set(key, row)
+              })
+              return [...merged.values()].sort((a, b) => a.timestamp - b.timestamp)
+            })} />
+
           {(loading || isSavingUsageEvents) && (
             <div className="mt-4 flex items-center justify-center">
               <div className="flex items-center">

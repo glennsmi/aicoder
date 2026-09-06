@@ -166,4 +166,7 @@ export const sendWelcomeEmailOnAuth = functionsV1.region('europe-west2').auth.us
     console.error('Error in sendWelcomeEmail function:', error);
     // Don't throw the error to avoid blocking user creation
   }
-}); 
+});
+export { ingestCodexLedger } from './usage/ingestCodexLedger'
+
+export { ingestClaudeLedger } from './usage/ingestClaudeLedger'

@@ -1,6 +1,49 @@
+import { usageSourceLabel, usageSourceTools } from './usageSource'
 import { CursorUsageV2, TokenBreakdown } from '@shared'
 
 const HOUR_MS = 60 * 60 * 1000
+
+export type GroupByMode = 'model' | 'expandedModel' | 'source' | 'provider'
+
+export type ModelProviderLabel =
+  | 'Anthropic'
+  | 'OpenAI'
+  | 'Cursor'
+  | 'Google'
+  | 'GitHub'
+  | 'Other'
+
+/**
+ * Map a model name to its vendor. Render-time only — not persisted.
+ * Cursor-hosted Grok / Composer names count as Cursor.
+ */
+export function resolveModelProvider(modelName: string): ModelProviderLabel {
+  const n = String(modelName || '').trim().toLowerCase()
+  if (!n) return 'Other'
+
+  if (
+    n.startsWith('cursor') ||
+    n.startsWith('composer') ||
+    n.includes('grok') ||
+    n.includes('xai')
+  ) {
+    return 'Cursor'
+  }
+  if (n.includes('claude') || n.includes('anthropic')) return 'Anthropic'
+  if (
+    n.startsWith('gpt') ||
+    n.startsWith('chatgpt') ||
+    n.startsWith('o1') ||
+    n.startsWith('o3') ||
+    n.startsWith('o4') ||
+    n.includes('openai')
+  ) {
+    return 'OpenAI'
+  }
+  if (n.includes('gemini') || n.includes('google') || n.includes('vertex')) return 'Google'
+  if (n.includes('copilot')) return 'GitHub'
+  return 'Other'
+}
 
 function hourStartMs(ms: number): number {
   return Math.floor(ms / HOUR_MS) * HOUR_MS
@@ -14,6 +57,7 @@ type BucketAcc = {
   breakdown: TokenBreakdown | null
   sawBreakdown: boolean
   sawNoBreakdown: boolean
+  sourceTools: Set<string>
   expandedModelTokenTotals: Record<string, number>
 }
 
@@ -25,7 +69,7 @@ type BucketAcc = {
  */
 export function aggregateCursorUsageV2ToHourlyByModel(
   rows: CursorUsageV2[],
-  options: { groupBy?: 'model' | 'expandedModel' | 'source' } = {}
+  options: { groupBy?: GroupByMode } = {}
 ): CursorUsageV2[] {
   if (!rows || rows.length === 0) return []
   const groupBy = options.groupBy ?? 'model'
@@ -45,14 +89,18 @@ export function aggregateCursorUsageV2ToHourlyByModel(
       ? String(((r.raw as any).expandedModelNames as unknown[]).find((v) => String(v || '').trim()) || '').trim()
       : ''
     const expandedModelName = String(r.expandedModelName || rawExpandedModelName || consolidatedModel).trim()
-    const source = String(r.source || '').trim() || 'unknown'
+    const source = usageSourceLabel(r.source || r.raw?.source)
     const groupName =
       groupBy === 'expandedModel'
         ? expandedModelName
         : groupBy === 'source'
           ? source
-          : consolidatedModel
+          : groupBy === 'provider'
+            ? resolveModelProvider(consolidatedModel || expandedModelName)
+            : consolidatedModel
     if (!groupName) continue
+    // Provider rows should break down into the models users already see, not expanded aliases.
+    const breakdownName = groupBy === 'provider' ? consolidatedModel : expandedModelName
 
     const key = `${start}|${groupName}`
     const prev = buckets.get(key)
@@ -62,6 +110,7 @@ export function aggregateCursorUsageV2ToHourlyByModel(
 
     if (!prev) {
       buckets.set(key, {
+        sourceTools: new Set(usageSourceTools(r)),
         timestamp: start,
         model: groupName,
         tokens,
@@ -77,18 +126,19 @@ export function aggregateCursorUsageV2ToHourlyByModel(
           : null,
         sawBreakdown: Boolean(r.tokenBreakdown),
         sawNoBreakdown: !r.tokenBreakdown,
-        expandedModelTokenTotals: expandedModelName
-          ? { [expandedModelName]: tokens }
+        expandedModelTokenTotals: breakdownName
+          ? { [breakdownName]: tokens }
           : {},
       })
       continue
     }
 
+    usageSourceTools(r).forEach(tool => prev.sourceTools.add(tool))
     prev.tokens += tokens
     prev.costUsd += costUsd
-    if (expandedModelName) {
-      prev.expandedModelTokenTotals[expandedModelName] =
-        (prev.expandedModelTokenTotals[expandedModelName] || 0) + tokens
+    if (breakdownName) {
+      prev.expandedModelTokenTotals[breakdownName] =
+        (prev.expandedModelTokenTotals[breakdownName] || 0) + tokens
     }
 
     if (r.tokenBreakdown) {
@@ -133,6 +183,7 @@ export function aggregateCursorUsageV2ToHourlyByModel(
       costUsd: b.costUsd,
       raw: {
         expandedModelTokenTotals: b.expandedModelTokenTotals,
+        sourceTools: [...b.sourceTools].sort(),
       },
     })
   }

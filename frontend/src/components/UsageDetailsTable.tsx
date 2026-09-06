@@ -1,3 +1,4 @@
+import { usageSourceLabel } from '@/lib/usageSource'
 import { useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { CursorUsageV2 } from '@shared'
@@ -90,8 +91,9 @@ export default function UsageDetailsTable({
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[210px_1fr_110px_110px_110px_110px] gap-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700">
+        <div className="grid grid-cols-[210px_130px_1fr_110px_110px_110px_110px] gap-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide bg-gray-50 dark:bg-gray-900/40 text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700">
           <div>Date</div>
+          <div>Source tool</div>
           <div>Model</div>
           <div className="text-right">Input</div>
           <div className="text-right">Output</div>
@@ -116,7 +118,7 @@ export default function UsageDetailsTable({
                 <div
                   key={row.id ?? v.key}
                   className={[
-                    'absolute left-0 right-0 grid grid-cols-[210px_1fr_110px_110px_110px_110px] px-3 py-2',
+                    'absolute left-0 right-0 grid grid-cols-[210px_130px_1fr_110px_110px_110px_110px] px-3 py-2',
                     'text-sm text-gray-900 dark:text-gray-100 border-b border-gray-100 dark:border-gray-700/60',
                     v.index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/50 dark:bg-gray-900/20',
                   ].join(' ')}
@@ -125,6 +127,7 @@ export default function UsageDetailsTable({
                   <div className="text-xs text-gray-700 dark:text-gray-200 tabular-nums">
                     {formatDateTime(row.timestamp)}
                   </div>
+                  <div className="text-xs">{usageSourceLabel(row.source || row.raw?.source)}</div>
                   <div className="min-w-0">
                     <span className="inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100">
                       {row.model}

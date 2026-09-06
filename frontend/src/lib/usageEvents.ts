@@ -30,6 +30,7 @@ function microsToUsd(micros: number): number {
 }
 
 function usageRowDedupKey(row: CursorUsageV2): string {
+  if (row.source === 'codex_local' || row.source === 'claude_code_local') return `${row.source}:${row.raw?.event_id || row.id}`
   const tb = row.tokenBreakdown
   return [
     String(row.timestamp),
