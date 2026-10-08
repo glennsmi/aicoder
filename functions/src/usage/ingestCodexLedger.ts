@@ -1,3 +1,4 @@
+import { ledgerPreflight } from './ledgerPreflight'
 import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import * as admin from 'firebase-admin'
 import { createHash } from 'node:crypto'
@@ -7,6 +8,7 @@ export const ingestCodexLedger = onCall({ cors: true, timeoutSeconds: 300 }, asy
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to save Codex usage')
   if (!Array.isArray(request.data?.rows) || !request.data.rows.length || request.data.rows.length > 200)
     throw new HttpsError('invalid-argument', 'Send between 1 and 200 rows')
+  if (request.data.checkOnly === true) return ledgerPreflight(request.auth.uid, 'codex_local', request.data.rows)
   let rows
   try { rows = request.data.rows.map(validateCodexRow) }
   catch { throw new HttpsError('invalid-argument', 'Invalid Codex ledger') }

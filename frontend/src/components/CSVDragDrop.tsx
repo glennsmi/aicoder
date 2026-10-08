@@ -1,3 +1,5 @@
+import RememberedUsageFolder from '@/components/RememberedUsageFolder'
+import { useAuth } from '@/contexts/AuthContext'
 import { useCallback, useEffect, useState } from 'react'
 import { CursorUsageV2, CursorUsageImportSummary, TokenBreakdown } from '@shared'
 import { resolveCanonicalModelName } from '@shared'
@@ -345,6 +347,7 @@ export default function CSVDragDrop({
   onCcusageImport,
   disabled = false,
 }: CSVDragDropProps) {
+  const { currentUser } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isParsing, setIsParsing] = useState(false)
@@ -564,7 +567,7 @@ export default function CSVDragDrop({
       <div className="text-xs text-gray-500 dark:text-gray-400 mb-4">
         Supported: Cursor CSV export and `ccusage daily --json --breakdown` output.
       </div>
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex flex-wrap items-center justify-center gap-3">
         <button
           onClick={onBrowse}
           disabled={disabled || isParsing}
@@ -582,6 +585,9 @@ export default function CSVDragDrop({
           Cursor Usage
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-2"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6" /><path d="m21 3-9 9" /><path d="M15 3h6v6" /></svg>
         </a>
+        <RememberedUsageFolder key={currentUser?.uid || 'guest'} accountId={currentUser?.uid} source="cursor" extension="csv" label="Select Cursor exports folder" disabled={disabled || isParsing} onFiles={handleFiles} />
+        <p className="basis-full text-xs text-neutral-600 dark:text-gray-300">Save Cursor usage CSV exports in a dedicated folder, then read that folder again here after downloading new exports.</p>
+
       </div>
       {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
 

@@ -611,7 +611,7 @@ const handleTokensImport = async (
         <div ref={importSectionRef} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-colors duration-200">
 
           
-          <CSVImport 
+          <CSVImport key={currentUser?.uid || "guest"}
             onTokensImport={handleTokensImport}
             onCcusageDailyImport={handleCcusageDailyImport}
             onClear={handleClear}
@@ -619,13 +619,13 @@ const handleTokensImport = async (
             disabled={loading || isSavingUsageEvents}
           />
           
-          <CodexUsageImport signedIn={Boolean(currentUser)} disabled={loading || isSavingUsageEvents}
+          <CodexUsageImport key={`codex-${currentUser?.uid || "guest"}`} accountId={currentUser?.uid} signedIn={Boolean(currentUser)} disabled={loading || isSavingUsageEvents}
             onImport={rows => setTempDataV2(previous => {
               const merged = new Map(previous.map(row => [usageRowMergeKey(row), row]))
               rows.forEach(row => merged.set(usageRowMergeKey(row), row))
               return [...merged.values()].sort((a, b) => a.timestamp - b.timestamp)
             })} />
-          <ClaudeUsageImport signedIn={Boolean(currentUser)} disabled={loading || isSavingUsageEvents}
+          <ClaudeUsageImport key={`claude-${currentUser?.uid || "guest"}`} accountId={currentUser?.uid} signedIn={Boolean(currentUser)} disabled={loading || isSavingUsageEvents}
             onImport={rows => setTempDataV2(previous => {
               const merged = new Map(previous.map(row => [usageRowMergeKey(row), row]))
               rows.forEach(row => {
